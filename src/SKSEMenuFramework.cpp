@@ -1,5 +1,6 @@
 #include "SKSEMenuFramework.h"
 #include "FontManager.h"
+#include "Menu.h"
 #include <imgui.h>
 #include "Application.h"
 #include "Renderer.h"
@@ -74,9 +75,9 @@ void PushBrands()
 
 void Pop() { FontManager::CleanFont(); }
 
-int64_t RegisterInpoutEvent(InputEventCallback callback) { return InputEventHandler::Register(callback); }
+int64_t RegisterInpoutEvent(InputEventCallback callback) { return SKSEMenuFrameworkMenu::RegisterInputEvent(callback); }
 
-void UnregisterInputEvent(uint64_t id) { InputEventHandler::Unregister(id); }
+void UnregisterInputEvent(uint64_t id) { SKSEMenuFrameworkMenu::UnregisterInputEvent(id); }
 
 int64_t RegisterHudElement(HudElementCallback callback) { return HudManager::Register(callback); }
 

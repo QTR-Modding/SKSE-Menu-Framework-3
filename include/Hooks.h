@@ -2,6 +2,7 @@
 namespace Hooks {
 
     void Install();
+    void InstallInputHooks();
 
     struct WndProcHook {
         static LRESULT thunk(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -14,18 +15,16 @@ namespace Hooks {
         static inline REL::Relocation<decltype(thunk)> originalFunction;
     };
 
-    struct RenderUIHook {
-        static int64_t thunk1(int64_t gMenuManager);
-        static int64_t thunk2(int64_t gMenuManager);
-        static inline REL::Relocation<decltype(thunk1)> originalFunction1;
-        static inline REL::Relocation<decltype(thunk2)> originalFunction2;
-        static void install();
-    };
+    template <class T>
+    struct InputHandlerHook : public T {
+        using CanProcess_t = decltype(&T::CanProcess);
+        static inline REL::Relocation<CanProcess_t> originalCanProcess;
 
-    struct ProcessInputQueueHook {
-        static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent* const* a_event);
-        static void install();
-        static inline REL::Relocation<decltype(thunk)> originalFunction;
+        bool CanProcess_Hook(RE::InputEvent* a_event);
+
+        static void Install(REL::Relocation<std::uintptr_t> a_vtbl, std::size_t a_offset) {
+            originalCanProcess = a_vtbl.write_vfunc(a_offset, &CanProcess_Hook);
+        }
     };
 
 }

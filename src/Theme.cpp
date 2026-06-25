@@ -52,6 +52,7 @@ void Theme::LoadJsonStyle(const std::string& path) {
     style.TabBarBorderSize = 0.0f;
     style.TabBorderSize = 0.0f;
     style.FramePadding = ImVec2(4.0f, 3.0f);
+    style.MouseCursorScale = 4.0f;
 
     ImGuiStyle& s = ImGui::GetStyle();
 

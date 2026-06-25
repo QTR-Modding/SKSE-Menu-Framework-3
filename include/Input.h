@@ -1,5 +1,7 @@
 #pragma once
 
+typedef bool(__stdcall* InputEventCallback)(RE::InputEvent*);
+
 struct DoublePressDetector {
     
     void press();

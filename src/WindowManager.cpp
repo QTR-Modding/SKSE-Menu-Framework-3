@@ -1,5 +1,6 @@
 #include "WindowManager.h"
 #include "Event.h"
+#include "imgui.h"
 
 Window::Window() {
 	Interface = new WindowInterface();
@@ -25,6 +26,7 @@ void WindowManager::Close() {
     WindowManager::ConfigInterface->BlockUserInput = true;
     ConfigInterface->IsOpen = false;
     MainInterface->IsOpen = false;
+    ImGui::GetIO().ClearInputKeys();
     Event::DispatchEvent(Event::EventType::kCloseMenu);
 }
 

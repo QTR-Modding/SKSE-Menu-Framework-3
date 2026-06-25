@@ -5,6 +5,7 @@
 #include "SKSEMenuFramework.h"
 #include "Licence.h"
 #include "Translations.h"
+#include "Menu.h"
 
 SKSEPluginLoad(const SKSE::LoadInterface* skse) {
     SetupLog();
@@ -22,5 +23,14 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse) {
     WindowManager::ConfigInterface->BlockUserInput = true;
     Translations::Install();
     Hooks::Install();
+    Hooks::InstallInputHooks();
+
+    SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {
+        if (a_msg->type == SKSE::MessagingInterface::kDataLoaded) {
+            SKSEMenuFrameworkMenu::Register();
+            SKSEMenuFrameworkMenu::Open();
+        }
+    });
+
     return true;
 }

@@ -4,101 +4,45 @@
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
 #include "WindowManager.h"
-#include "InputEventHandler.h"
 #include "HudManager.h"
-#include "GameLock.h"
 #include "TextureLoader.h"
 #include "Event.h"
 
-void Hooks::Install() {
-    D3DInitHook::install();
-    RenderUIHook::install();
-    ProcessInputQueueHook::install();
+template <class T>
+bool Hooks::InputHandlerHook<T>::CanProcess_Hook(RE::InputEvent* a_event) {
+    if (WindowManager::IsAnyWindowOpen()) {
+        return false;
+    }
+    return originalCanProcess(this, a_event);
 }
+
+void Hooks::InstallInputHooks() {
+    Hooks::InputHandlerHook<RE::ActivateHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_ActivateHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::AttackBlockHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_AttackBlockHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::AutoMoveHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_AutoMoveHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::FirstPersonState>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_FirstPersonState[0]), 0xB);
+    Hooks::InputHandlerHook<RE::JumpHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_JumpHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::LookHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_LookHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::MovementHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_MovementHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::ReadyWeaponHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_ReadyWeaponHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::RunHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_RunHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::ShoutHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_ShoutHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::SneakHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_SneakHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::SprintHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_SprintHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::ThirdPersonState>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_ThirdPersonState[0]), 0x12);
+    Hooks::InputHandlerHook<RE::TogglePOVHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_TogglePOVHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::ToggleRunHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_ToggleRunHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::FavoritesHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_FavoritesHandler[0]), 0x1);
+    Hooks::InputHandlerHook<RE::MenuOpenHandler>::Install(REL::Relocation<std::uintptr_t>(RE::VTABLE_MenuOpenHandler[0]), 0x1);
+}
+
+void Hooks::Install() { D3DInitHook::install(); }
 
 void Hooks::D3DInitHook::install() {
     SKSE::AllocTrampoline(14);
     auto& trampoline = SKSE::GetTrampoline();
     originalFunction = trampoline.write_call<5>(
         REL::RelocationID(75595, 77226, 75595).address() + REL::Relocate(0x9, 0x275, 0x9), thunk);
-}
-
-void Hooks::RenderUIHook::install() {
-    SKSE::AllocTrampoline(14);
-    auto& trampoline = SKSE::GetTrampoline();
-    originalFunction1 = trampoline.write_call<5>(REL::RelocationID(35556, 36555, 35556).address() + REL::Relocate(0x3ab, 0x371), thunk1);
-    SKSE::AllocTrampoline(14);
-    originalFunction2 = trampoline.write_call<5>(REL::RelocationID(38085, 39039).address() + REL::Relocate(0x19a, 0x19a), thunk2);
-}
-
-void Hooks::ProcessInputQueueHook::install() {
-    SKSE::AllocTrampoline(14);
-    auto& trampoline = SKSE::GetTrampoline();
-    originalFunction = trampoline.write_call<5>(
-        REL::RelocationID(67315, 68617, 67315).address() + REL::Relocate(0x7B, 0x7B, 0x81), thunk);
-}
-void DisableImGuiInput() {
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
-    io.ConfigFlags |= ImGuiConfigFlags_NavNoCaptureKeyboard;
-    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
-}
-void EnableImGuiInput() {
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-    io.ConfigFlags &= ~ImGuiConfigFlags_NavNoCaptureKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-}
-
-RE::InputEvent** RemoveNonPrintScreenInputs(RE::InputEvent** a_event) {
-    auto first = *a_event;
-    auto last = *a_event;
-    size_t length = 0;
-
-    for (auto current = *a_event; current; current = current->next) {
-
-        if (auto button = current->AsButtonEvent()) {
-            if (button->GetDevice() == RE::INPUT_DEVICE::kKeyboard && button->GetIDCode() == RE::BSWin32KeyboardDevice::Keys::kPrintScreen) {
-                last = current;
-                ++length;
-                continue;
-            }
-        }
-
-        if (current != last) {
-            last->next = current->next;
-        } else {
-            last = current->next;
-            first = current->next;
-        }
-    }
-    a_event[0] = first;
-    return a_event;
-}
-
-void Hooks::ProcessInputQueueHook::thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher,
-                                      RE::InputEvent* const* a_event) {
-    bool isInputCapturedByOpenClose = UI::Renderer::ProcessOpenClose(a_event);
-
-    if (!ImGui::IsAnyItemActive()) {
-        a_event = InputEventHandler::Process(const_cast<RE::InputEvent**>(a_event));
-    }
-
-    if (isInputCapturedByOpenClose) {
-        constexpr RE::InputEvent* const dummy[] = {nullptr};
-        originalFunction(a_dispatcher, dummy);
-    } else {
-        if (WindowManager::ShouldTheGameBePaused()) {
-            EnableImGuiInput();
-            UI::TranslateInputEvent(a_event);
-            originalFunction(a_dispatcher, RemoveNonPrintScreenInputs(const_cast<RE::InputEvent**>(a_event)));
-        } else {
-            DisableImGuiInput();
-            originalFunction(a_dispatcher, a_event);
-        }
-    }
 }
 
 LRESULT Hooks::WndProcHook::thunk(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -132,8 +76,13 @@ void Hooks::D3DInitHook::thunk() {
         return;
     }
     const auto device = reinterpret_cast<ID3D11Device*>(data.forwarder);
-    const auto context = reinterpret_cast<ID3D11DeviceContext*>(data.context);
 
+    ID3D11DeviceContext* context = nullptr;
+    device->GetImmediateContext(&context);
+    if (!context) {
+        SKSE::log::error("couldn't get immediate context");
+        return;
+    }
     TextureLoader::Init(device, context);
 
     SKSE::log::info("Initializing ImGui...");
@@ -144,8 +93,9 @@ void Hooks::D3DInitHook::thunk() {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
     io.IniFilename = nullptr;
-    io.MouseDrawCursor = true;
+    io.MouseDrawCursor = false;
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     if (!ImGui_ImplWin32_Init(desc.OutputWindow)) {
@@ -157,10 +107,6 @@ void Hooks::D3DInitHook::thunk() {
         SKSE::log::error("ImGui initialization failed (DX11)");
         return;
     }
-
-    UI::Renderer::initialized.store(true);
-
-    SKSE::log::info("ImGui initialized.");
 
     WndProcHook::func = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(WndProcHook::thunk)));
@@ -179,60 +125,14 @@ void Hooks::D3DInitHook::thunk() {
 
     io.Fonts->Build();
 
-    logger::debug("[D3DInitHook] FINISH");
-}
-
-void Render() {
-    if (!UI::Renderer::initialized.load()) {
+    if (!ImGui_ImplDX11_CreateDeviceObjects()) {
+        SKSE::log::error("ImGui DX11 device object creation failed");
         return;
     }
 
-    Event::DispatchEvent(Event::EventType::kBeforeRender);
+    UI::Renderer::initialized.store(true);
 
-    ImGui_ImplDX11_NewFrame();
-    ImGui_ImplWin32_NewFrame();
-    {
-        // trick imgui into rendering at game's real resolution (ie. if upscaled with Display Tweaks)
-        static const auto screenSize = RE::BSGraphics::Renderer::GetScreenSize();
+    SKSE::log::info("ImGui initialized.");
 
-        auto& io = ImGui::GetIO();
-        io.DisplaySize.x = static_cast<float>(screenSize.width);
-        io.DisplaySize.y = static_cast<float>(screenSize.height);
-    }
-    ImGui::NewFrame();
-    HudManager::Render();
-    if (WindowManager::IsAnyWindowOpen()) {
-        auto& io = ImGui::GetIO();
-        if (!WindowManager::ShouldTheGameBePaused()) {
-            io.MouseDrawCursor = false;
-            GameLock::SetState(GameLock::State::Resume);
-        } else {
-            GameLock::SetState(GameLock::State::Locked);
-            io.MouseDrawCursor = true;
-        }
-
-        UI::Renderer::RenderWindows();
-    } else {
-        auto& io = ImGui::GetIO();
-        io.MouseDrawCursor = false;
-        GameLock::SetState(GameLock::State::Unlocked);
-    }
-    ImGui::EndFrame();
-    ImGui::Render();
-    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-    FontManager::CleanFont();
-
-    Event::DispatchEvent(Event::EventType::kAfterRender);
-}
-
-int64_t Hooks::RenderUIHook::thunk1(int64_t gMenuManager) {
-    auto result = originalFunction1(gMenuManager);
-    Render();
-    return result;
-}
-
-int64_t Hooks::RenderUIHook::thunk2(int64_t gMenuManager) { 
-    auto result = originalFunction2(gMenuManager);
-    Render();
-    return result;
+    logger::debug("[D3DInitHook] FINISH");
 }

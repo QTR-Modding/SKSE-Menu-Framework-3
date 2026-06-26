@@ -3,7 +3,7 @@
 #include "FontManager.h"
 #include "WindowManager.h"
 #include "imgui_impl_dx11.h"
-
+#include "VRHelperClient.h"
 
 void UI::Renderer::ImGuiBegin() {
     ImGui_ImplDX11_NewFrame();
@@ -36,6 +36,8 @@ void UI::Renderer::ImGuiBegin() {
 
     Event::DispatchEvent(Event::EventType::kBeforeRender);
     ImGui::NewFrame();
+
+    VRHelperClient::Update();
 }
 
 void UI::Renderer::ImGuiEnd() {

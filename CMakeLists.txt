@@ -1,9 +1,16 @@
 # ---------------------------------------------------- #
-#                 Required envs assert                 #
+#                  CommonLibSSE-NG source              #
 # ---------------------------------------------------- #
-
-if(NOT DEFINED ENV{COMMONLIB_SSE_FOLDER})
-  message(FATAL_ERROR "Missing COMMONLIB_SSE_FOLDER environment variable")
+# Prefer the COMMONLIB_SSE_FOLDER env var (a shared local clone) when set; else
+# fall back to the vendored submodule so the build is self-contained (CI, fresh
+# contributors) with a pinned, static dependency.
+if(DEFINED ENV{COMMONLIB_SSE_FOLDER})
+  set(COMMONLIBSSE_DIR "$ENV{COMMONLIB_SSE_FOLDER}")
+else()
+  set(COMMONLIBSSE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/CommonLibSSE-NG")
+endif()
+if(NOT EXISTS "${COMMONLIBSSE_DIR}/CMakeLists.txt")
+  message(FATAL_ERROR "CommonLibSSE-NG not found at '${COMMONLIBSSE_DIR}'. Set COMMONLIB_SSE_FOLDER or run: git submodule update --init --recursive")
 endif()
 
 # ---------------------------------------------------- #
@@ -18,16 +25,13 @@ include(cmake/lib/autoCollectSources.cmake)
 add_src_folder(src)
 add_include_folder(include)
 
-add_src_folder(vendor/src)
-add_include_folder(vendor/include)
-
 
 cmake_minimum_required(VERSION 3.21)
 set(AUTHOR_NAME "SkyrimThiago")
 set(PRODUCT_NAME "SKSEMenuFramework")
 set(BEAUTIFUL_NAME "SKSE Menu Framework")
 
-project(${PRODUCT_NAME} VERSION 3.0.0.0 LANGUAGES CXX)
+project(${PRODUCT_NAME} VERSION 3.11.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
@@ -65,7 +69,7 @@ set(ENABLE_SKYRIM_VR ON CACHE BOOL " " FORCE)
 set(BUILD_TESTS OFF CACHE BOOL " " FORCE)
 set(VALIDATE_LICENSE OFF CACHE BOOL " " FORCE)
 
-add_subdirectory("$ENV{COMMONLIB_SSE_FOLDER}" ${CMAKE_CURRENT_BINARY_DIR}/_deps/clib-build)
+add_subdirectory("${COMMONLIBSSE_DIR}" ${CMAKE_CURRENT_BINARY_DIR}/_deps/clib-build)
 get_target_property(COMMONLIB_SRC_DIR CommonLibSSE SOURCE_DIR)
 
 find_path(CLIB_UTIL_INCLUDE_DIRS "ClibUtil/utils.hpp")
@@ -96,9 +100,28 @@ add_commonlibsse_plugin(
   AUTHOR AUTHOR_NAME
   SOURCES ${headers} ${sources}
 )
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23) 
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_precompile_headers(${PROJECT_NAME} PRIVATE include/PCH.h)
 target_compile_definitions(${PROJECT_NAME}  PRIVATE BEAUTIFUL_NAME="${BEAUTIFUL_NAME}" IMGUI_DEFINE_MATH_OPERATORS)
+
+# ---------------------------------------------------- #
+#                ImGuiVRHelper client API              #
+# ---------------------------------------------------- #
+# Pulled from upstream instead of vendored, so the dependency and its pinned
+# version are explicit. The helper builds with xmake; we configure only its api/
+# CMake target (SOURCE_SUBDIR) and skip the helper's own submodules. The INTERFACE
+# target compiles the handshake stub into this plugin, inheriting our CommonLib /
+# ImGui / DX11 / json. Override with -DFETCHCONTENT_SOURCE_DIR_IMGUIVRHELPER=<path>
+# to build against a local checkout.
+FetchContent_Declare(
+    ImGuiVRHelper
+    GIT_REPOSITORY https://github.com/alandtse/imgui-vr-helper.git
+    GIT_TAG        v1.0.0
+    GIT_SUBMODULES ""
+    SOURCE_SUBDIR  api
+)
+FetchContent_MakeAvailable(ImGuiVRHelper)
+target_link_libraries(${PROJECT_NAME} PRIVATE ImGuiVRHelper::api)
 
 
 set(header_dirs "")

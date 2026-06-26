@@ -6,6 +6,7 @@
 #include "Licence.h"
 #include "Translations.h"
 #include "Menu.h"
+#include "VRHelperClient.h"
 
 SKSEPluginLoad(const SKSE::LoadInterface* skse) {
     SetupLog();
@@ -29,6 +30,11 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse) {
         if (a_msg->type == SKSE::MessagingInterface::kDataLoaded) {
             SKSEMenuFrameworkMenu::Register();
             SKSEMenuFrameworkMenu::Open();
+        } else if (a_msg->type == SKSE::MessagingInterface::kPostPostLoad) {
+            // Connect to ImGuiVRHelper at kPostPostLoad — by then the helper has
+            // registered its handshake listener (at kPostLoad), so this reaches it
+            // regardless of load order.
+            VRHelperClient::ConnectVRHelper();
         }
     });
 

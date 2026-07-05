@@ -34,8 +34,13 @@ void Hooks::ConnectVRHelper() {
     const auto decl = SKSE::PluginDeclaration::GetSingleton();
     const auto version = decl->GetVersion();
     const auto versionStr = std::format("{}.{}.{}", version.major(), version.minor(), version.patch());
+    // OwnCursor: this framework already manages MouseDrawCursor itself, uniformly
+    // across desktop and VR, based on its own pause/window-open state (see
+    // Render()) -- registering the flag makes the SDK's per-frame management
+    // agree instead of silently fighting it once PumpInput starts consulting it.
     if (g_vrHelper.Connect(BEAUTIFUL_NAME, versionStr.c_str(),
-            ImGuiVRHelperPluginAPI::kClientFlag_RendersOnFocus)) {
+            ImGuiVRHelperPluginAPI::kClientFlag_RendersOnFocus |
+                ImGuiVRHelperPluginAPI::kClientFlag_OwnCursor)) {
         logger::info("ImGuiVRHelper: connected as VR overlay client");
     } else {
         logger::info("ImGuiVRHelper not present; menu stays on the flat mirror");

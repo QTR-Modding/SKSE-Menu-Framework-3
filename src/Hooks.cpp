@@ -10,6 +10,7 @@
 #include "GameLock.h"
 #include "TextureLoader.h"
 #include "Event.h"
+#include "BackdropBlur.h"
 
 #include "ImGuiVRHelperClientSDK.h"  // vendored ImGuiVRHelper SDK (VR overlay/input)
 
@@ -161,6 +162,7 @@ void Hooks::D3DInitHook::thunk() {
     const auto context = reinterpret_cast<ID3D11DeviceContext*>(data.context);
 
     TextureLoader::Init(device, context);
+    BackdropBlur::Init(device, context);
 
     SKSE::log::info("Initializing ImGui...");
 

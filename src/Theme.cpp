@@ -29,13 +29,14 @@ std::vector<std::string> Theme::GetJsonFiles() {
     }
     return out;
 }
-
 void Theme::LoadJsonStyle(const std::string& path) {
     std::ifstream f("Data\\SKSE\\plugins\\SKSEMenuFrameworkThemes\\" + path + ".json");
     if (!f.good()) return;
 
     nlohmann::json j;
     f >> j;
+
+    WindowBlurStrength = j.value("WindowBlurStrength", 0.0f);
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();

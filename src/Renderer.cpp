@@ -9,6 +9,8 @@
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
 #include "dxgi.h"
+#include "BackdropBlur.h"
+#include "Theme.h"
 
 
 bool UI::Renderer::ProcessOpenClose(RE::InputEvent* const* evns) {
@@ -59,11 +61,13 @@ bool UI::Renderer::ProcessOpenClose(RE::InputEvent* const* evns) {
 
 
 void UI::Renderer::RenderWindows() {
+    BackdropBlur::BeginWindowCollection();
     for (const auto window : WindowManager::Windows) {
         if (window->Interface->IsOpen) {
             window->Render();
         }
     }
+    BackdropBlur::DrawBehindActiveWindows(Theme::WindowBlurStrength);
 }
 
 void UI::Renderer::install() {}

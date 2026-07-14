@@ -34,8 +34,11 @@ void Hooks::ConnectVRHelper() {
     const auto decl = SKSE::PluginDeclaration::GetSingleton();
     const auto version = decl->GetVersion();
     const auto versionStr = std::format("{}.{}.{}", version.major(), version.minor(), version.patch());
+    // kClientFlag_OwnCursor: draw our own cursor from io.MousePos (the same
+    // value ImGui hit-tests against) instead of the helper's own marker.
     if (g_vrHelper.Connect(BEAUTIFUL_NAME, versionStr.c_str(),
-            ImGuiVRHelperPluginAPI::kClientFlag_RendersOnFocus)) {
+            ImGuiVRHelperPluginAPI::kClientFlag_RendersOnFocus |
+                ImGuiVRHelperPluginAPI::kClientFlag_OwnCursor)) {
         logger::info("ImGuiVRHelper: connected as VR overlay client");
     } else {
         logger::info("ImGuiVRHelper not present; menu stays on the flat mirror");
@@ -235,7 +238,9 @@ void Render() {
 
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
-    {
+    // When connected, size to the helper's panel canvas so wand UV and our own
+    // layout share one coordinate space, instead of the flat mirror's resolution.
+    if (!g_vrHelper.IsConnected() || !g_vrHelper.ApplyPanelDisplaySize()) {
         // trick imgui into rendering at game's real resolution (ie. if upscaled with Display Tweaks)
         static const auto screenSize = RE::BSGraphics::Renderer::GetScreenSize();
 

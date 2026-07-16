@@ -3,6 +3,16 @@
   "Options": "Opções (X) \uf0d7",
   "Options.ResumeGame": "Controlar Jogo",
   "Options.OpenSettings": "Abrir Configurações",
+  "Options.RestoreArchivedMenus": "Restaurar Menus Arquivados",
+  "Options.NoArchivedMenus": "Nenhum menu arquivado",
+
+  "Menu.AddFavorite": "Adicionar aos favoritos",
+  "Menu.RemoveFavorite": "Remover dos favoritos",
+  "Menu.Archive": "Arquivar menu",
+  "Menu.Archive.Title": "Arquivar Menu",
+  "Menu.Archive.Confirm": "Tem certeza de que deseja arquivar este menu?",
+  "Menu.Archive.Yes": "Arquivar",
+  "Menu.Archive.No": "Cancelar",
 
   "Settings.Title": "Configurações",
   "Settings.MenuStyle": "Estilo do Menu:",

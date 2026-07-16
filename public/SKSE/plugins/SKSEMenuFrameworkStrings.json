@@ -3,6 +3,16 @@
   "Options": "Options (X) \uf0d7",
   "Options.ResumeGame": "Resume Game",
   "Options.OpenSettings": "Open Settings",
+  "Options.RestoreArchivedMenus": "Restore Archived Menus",
+  "Options.NoArchivedMenus": "No archived menus",
+
+  "Menu.AddFavorite": "Add to favorites",
+  "Menu.RemoveFavorite": "Remove from favorites",
+  "Menu.Archive": "Archive menu",
+  "Menu.Archive.Title": "Archive Menu",
+  "Menu.Archive.Confirm": "Are you sure you want to archive this menu?",
+  "Menu.Archive.Yes": "Archive",
+  "Menu.Archive.No": "Cancel",
 
   "Settings.Title": "Settings",
   "Settings.MenuStyle": "Menu Style:",

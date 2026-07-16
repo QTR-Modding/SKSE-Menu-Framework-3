@@ -1,11 +1,13 @@
 #include "UI.h"
 #include "WindowManager.h"
+#include <algorithm>
 #include <imgui.h>
 #include "Renderer.h"
 #include "Application.h"
 #include "SKSEMenuFramework.h"
 #include "Translations.h"
 #include "FontManager.h"
+#include "RootMenuConfig.h"
 static ImGuiTextFilter filter;
 
 UI::MenuTree* UI::RootMenu = new UI::MenuTree();
@@ -13,8 +15,6 @@ UI::MenuTree* UI::RootMenu = new UI::MenuTree();
 
 int frame = 0;
 
-size_t item_current_idx = 0;
-size_t node_id = 0;
 UI::MenuTree* display_node;
 
 
@@ -23,6 +23,14 @@ static ImGuiTreeNodeFlags base_flags =
 static int selection_mask = (1 << 2);
 
 namespace {
+    constexpr auto FAVORITE_STAR = "\xEF\x80\x85";
+    constexpr auto ARCHIVE_ICON = "\xEF\x86\x87";
+    constexpr ImVec4 FAVORITE_STAR_COLOR = ImVec4(1.0f, 0.84f, 0.0f, 1.0f);
+
+    std::string pendingArchiveMenuName;
+    UI::MenuTree* pendingArchiveMenu = nullptr;
+    bool archiveConfirmationRequested = false;
+
     struct WindowSizeAndPosition {
         bool HasSavedState = false;
         ImVec2 Position{};
@@ -73,25 +81,140 @@ namespace {
         ImGui::SetWindowPos("Settings##Window", configWindowPosition, ImGuiCond_Always);
         ImGui::SetWindowSize("Settings##Window", configWindowSize, ImGuiCond_Always);
     }
+
+    bool ContainsNode(const UI::MenuTree* root, const UI::MenuTree* target) {
+        if (!root || !target) {
+            return false;
+        }
+        if (root == target) {
+            return true;
+        }
+
+        for (const auto& child : root->Children) {
+            if (ContainsNode(child.second, target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void SetRootMenuArchived(const std::string& menuName, UI::MenuTree* menu, bool archived) {
+        RootMenuConfig::SetArchived(menuName, archived);
+        if (archived && ContainsNode(menu, display_node)) {
+            display_node = nullptr;
+        }
+    }
+
+    void RenderTooltip(const char* translationKey) {
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(Translations::Get(translationKey));
+            ImGui::EndTooltip();
+        }
+    }
+
+    void RenderRootMenuButtons(const std::string& menuName, UI::MenuTree* menu, bool favorite) {
+        const auto headerMin = ImGui::GetItemRectMin();
+        const auto headerMax = ImGui::GetItemRectMax();
+        const auto restoreCursor = ImGui::GetCursorScreenPos();
+        const float buttonSize = headerMax.y - headerMin.y;
+
+        ImGui::PushID(menuName.c_str());
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+        ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize * 2.0f, headerMin.y));
+        ImGui::PushStyleColor(
+            ImGuiCol_Text, favorite ? FAVORITE_STAR_COLOR : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        if (ImGui::Button(FAVORITE_STAR, ImVec2(buttonSize, buttonSize))) {
+            RootMenuConfig::SetFavorite(menuName, !favorite);
+        }
+        ImGui::PopStyleColor();
+        RenderTooltip(favorite ? "Menu.RemoveFavorite" : "Menu.AddFavorite");
+
+        ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize, headerMin.y));
+        if (ImGui::Button(ARCHIVE_ICON, ImVec2(buttonSize, buttonSize))) {
+            pendingArchiveMenuName = menuName;
+            pendingArchiveMenu = menu;
+            archiveConfirmationRequested = true;
+        }
+        RenderTooltip("Menu.Archive");
+
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+        ImGui::PopID();
+        ImGui::SetCursorScreenPos(restoreCursor);
+    }
+
+    void RenderArchivedMenuRecovery() {
+        if (ImGui::BeginMenu(Translations::Get("Options.RestoreArchivedMenus"))) {
+            bool hasArchivedMenus = false;
+            for (const auto& [menuName, menu] : UI::RootMenu->Children) {
+                if (!RootMenuConfig::IsArchived(menuName)) {
+                    continue;
+                }
+
+                hasArchivedMenus = true;
+                ImGui::PushID(menuName.c_str());
+                if (ImGui::MenuItem(menuName.c_str())) {
+                    SetRootMenuArchived(menuName, menu, false);
+                }
+                ImGui::PopID();
+            }
+
+            if (!hasArchivedMenus) {
+                ImGui::MenuItem(Translations::Get("Options.NoArchivedMenus"), nullptr, false, false);
+            }
+            ImGui::EndMenu();
+        }
+    }
+
+    void RenderArchiveConfirmation() {
+        const auto popupTitle = std::format("{}##ArchiveRootMenuConfirmation",
+            Translations::Get("Menu.Archive.Title"));
+        if (archiveConfirmationRequested) {
+            ImGui::OpenPopup(popupTitle.c_str());
+            archiveConfirmationRequested = false;
+        }
+
+        const auto viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if (ImGui::BeginPopupModal(popupTitle.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted(Translations::Get("Menu.Archive.Confirm"));
+            ImGui::TextUnformatted(pendingArchiveMenuName.c_str());
+            ImGui::Separator();
+
+            if (ImGui::Button(Translations::Get("Menu.Archive.Yes"))) {
+                SetRootMenuArchived(pendingArchiveMenuName, pendingArchiveMenu, true);
+                pendingArchiveMenuName.clear();
+                pendingArchiveMenu = nullptr;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(Translations::Get("Menu.Archive.No"))) {
+                pendingArchiveMenuName.clear();
+                pendingArchiveMenu = nullptr;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
 }
 
 void DummyRenderer(std::pair<const std::string, UI::MenuTree*>& node) {
-    ++node_id;
     for (auto& item : node.second->Children) {
         DummyRenderer(item);
     }
 }
 
 void RenderNode(std::pair<const std::string, UI::MenuTree*>& node) {
-    ++node_id;
     ImGuiTreeNodeFlags node_flags = base_flags;
-    // const bool is_selected = item_current_idx == i;
-    if (item_current_idx == node_id) node_flags |= ImGuiTreeNodeFlags_Selected;
+    if (display_node == node.second) node_flags |= ImGuiTreeNodeFlags_Selected;
 
     if (node.second->Children.size() == 0) {
         node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
-    bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)node_id, node_flags, node.first.c_str(), node_id);
+    bool node_open = ImGui::TreeNodeEx(node.second, node_flags, "%s", node.first.c_str());
 
 
     bool itemClicked = ImGui::IsItemClicked();
@@ -101,7 +224,6 @@ void RenderNode(std::pair<const std::string, UI::MenuTree*>& node) {
 
     if ((itemClicked || (gamepadButtonPressed && itemIsFocused)) && !itemToggledOpen) {
         if (node.second->Render) {
-            item_current_idx = node_id;
             display_node = node.second;
         }
     }
@@ -143,6 +265,8 @@ void __stdcall UI::RenderMenuWindow() {
             if (ImGui::MenuItem(Translations::Get("Options.OpenSettings"))) {
                 WindowManager::ConfigInterface->IsOpen = true;
             }
+            ImGui::Separator();
+            RenderArchivedMenuRecovery();
             ImGui::EndMenu();
         }
         Pop();
@@ -198,11 +322,45 @@ void __stdcall UI::RenderMenuWindow() {
     // Tree view section
     ImGui::BeginChild("SKSEModControlPanelTreeView", ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, -FLT_MIN),
                       ImGuiChildFlags_Border);
-    node_id = 0;
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 5.0f));
+    std::vector<const std::pair<const std::string, UI::MenuTree*>*> rootMenus;
+    rootMenus.reserve(RootMenu->Children.size());
     for (const auto& item : RootMenu->Children) {
-        if (filter.PassFilter(item.first.c_str()) &&
-            (ImGui::CollapsingHeader(std::format("{}##{}", item.first, node_id).c_str()))) {
+        rootMenus.push_back(&item);
+    }
+    std::stable_sort(rootMenus.begin(), rootMenus.end(), [](const auto* left, const auto* right) {
+        const bool leftFavorite = RootMenuConfig::IsFavorite(left->first);
+        const bool rightFavorite = RootMenuConfig::IsFavorite(right->first);
+        if (leftFavorite != rightFavorite) {
+            return leftFavorite;
+        }
+        return left->first < right->first;
+    });
+
+    for (const auto* rootMenu : rootMenus) {
+        const auto& item = *rootMenu;
+        if (RootMenuConfig::IsArchived(item.first)) {
+            for (auto node : item.second->Children) {
+                DummyRenderer(node);
+            }
+            continue;
+        }
+
+        const bool favorite = RootMenuConfig::IsFavorite(item.first);
+        const bool passesFilter = filter.PassFilter(item.first.c_str());
+        const auto headerLabel = std::format("{}##RootMenu-{}", item.first, item.first);
+        const auto headerFlags = ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_ClipLabelForTrailingButton;
+        const bool headerOpen = passesFilter && ImGui::CollapsingHeader(headerLabel.c_str(), headerFlags);
+
+        if (passesFilter) {
+            RenderRootMenuButtons(item.first, item.second, favorite);
+        }
+
+        if (RootMenuConfig::IsArchived(item.first)) {
+            for (auto node : item.second->Children) {
+                DummyRenderer(node);
+            }
+        } else if (headerOpen) {
             for (auto node : item.second->SortedChildren) {
                 RenderNode(node);
             }
@@ -223,6 +381,8 @@ void __stdcall UI::RenderMenuWindow() {
         display_node->Render();
     }
     ImGui::EndChild();
+
+    RenderArchiveConfirmation();
 
     ImGui::End();
 }

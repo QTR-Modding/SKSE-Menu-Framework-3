@@ -4,6 +4,7 @@
 #include "UI.h"
 #include "SKSEMenuFramework.h"
 #include "Licence.h"
+#include "RootMenuConfig.h"
 #include "Translations.h"
 
 SKSEPluginLoad(const SKSE::LoadInterface* skse) {
@@ -24,6 +25,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse) {
         }
     });
     Config::Init();
+    RootMenuConfig::Load();
     WindowManager::MainInterface = AddWindow(UI::RenderMenuWindow);
     WindowManager::ConfigInterface = AddWindow(UI::RenderConfigWindow);
     WindowManager::MainInterface->BlockUserInput = true;

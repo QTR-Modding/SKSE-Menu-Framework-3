@@ -20,6 +20,19 @@ bool WindowManager::ShouldTheGameBePaused() {
     return it != WindowManager::Windows.end();
 }
 
+bool WindowManager::ConsumeBlockingWindowOpened() {
+    bool blockingWindowOpened = false;
+
+    for (const auto window : Windows) {
+        const bool isBlockingOpen =
+            window->Interface->IsOpen.load() && window->Interface->BlockUserInput.load();
+        blockingWindowOpened |= isBlockingOpen && !window->WasBlockingOpen;
+        window->WasBlockingOpen = isBlockingOpen;
+    }
+
+    return blockingWindowOpened;
+}
+
 void WindowManager::Close() {
     WindowManager::MainInterface->BlockUserInput = true;
     WindowManager::ConfigInterface->BlockUserInput = true;

@@ -18,6 +18,33 @@ namespace {
     // is mirrored into the helper's in-scene panel and driven by the wand; on
     // desktop (no helper) this stays unconnected and the normal flat path runs.
     ImGuiVRHelperPluginAPI::Client g_vrHelper;
+    HWND g_outputWindow = nullptr;
+
+    bool CenterMouseCursorInWindow() {
+        if (!g_outputWindow) {
+            return false;
+        }
+
+        const HWND foregroundWindow = GetForegroundWindow();
+        if (foregroundWindow != g_outputWindow && !IsChild(g_outputWindow, foregroundWindow)) {
+            return false;
+        }
+
+        RECT clientRect{};
+        if (!GetClientRect(g_outputWindow, &clientRect)) {
+            return false;
+        }
+
+        POINT center{
+            clientRect.left + (clientRect.right - clientRect.left) / 2,
+            clientRect.top + (clientRect.bottom - clientRect.top) / 2
+        };
+        if (!ClientToScreen(g_outputWindow, &center)) {
+            return false;
+        }
+
+        return SetCursorPos(center.x, center.y) != FALSE;
+    }
 }
 
 void Hooks::Install() {
@@ -182,6 +209,7 @@ void Hooks::D3DInitHook::thunk() {
         return;
     }
 
+    g_outputWindow = desc.OutputWindow;
     UI::Renderer::initialized.store(true);
 
     SKSE::log::info("ImGui initialized.");
@@ -222,6 +250,9 @@ void Render() {
         g_vrHelper.PumpKeyboard();
     }
 
+    const bool blockingWindowOpened = WindowManager::ConsumeBlockingWindowOpened();
+    const bool mouseCursorCentered = blockingWindowOpened && CenterMouseCursorInWindow();
+
     // Decided once per frame, after the VR reconciliation above (which can
     // flip menu-open this same frame), not per RE::InputEvent: the VR wand is
     // pumped straight into ImGui's IO above, bypassing RE::InputEvent
@@ -242,6 +273,9 @@ void Render() {
         auto& io = ImGui::GetIO();
         io.DisplaySize.x = static_cast<float>(screenSize.width);
         io.DisplaySize.y = static_cast<float>(screenSize.height);
+        if (mouseCursorCentered) {
+            io.AddMousePosEvent(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+        }
     }
     ImGui::NewFrame();
     HudManager::Render();

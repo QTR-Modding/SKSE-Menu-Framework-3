@@ -15,6 +15,7 @@ public:
     Window();
     WindowInterface* Interface;
     RenderFunction Render;
+    bool WasBlockingOpen{false};
 };
 
 
@@ -25,6 +26,7 @@ public:
     static inline WindowInterface* ConfigInterface;
     static bool IsAnyWindowOpen();
     static bool ShouldTheGameBePaused();
+    static bool ConsumeBlockingWindowOpened();
     static void Close();
     static void Open();
 };

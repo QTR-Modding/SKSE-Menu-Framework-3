@@ -61,7 +61,7 @@ void PushFont(const char* name)
 
 void Pop() { FontManager::CleanFont(); }
 
-int64_t RegisterInpoutEvent(InputEventCallback callback) { return InputEventHandler::Register(callback); }
+int64_t RegisterInputEvent(InputEventCallback callback) { return InputEventHandler::Register(callback); }
 
 void UnregisterInputEvent(uint64_t id) { InputEventHandler::Unregister(id); }
 

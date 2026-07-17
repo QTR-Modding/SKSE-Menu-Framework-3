@@ -17,7 +17,7 @@ FUNCTION_PREFIX void PushRegular();
 FUNCTION_PREFIX void PushBrands();
 FUNCTION_PREFIX void PushFont(const char* name);
 FUNCTION_PREFIX void Pop();
-FUNCTION_PREFIX int64_t RegisterInpoutEvent(InputEventCallback callback);
+FUNCTION_PREFIX int64_t RegisterInputEvent(InputEventCallback callback);
 FUNCTION_PREFIX void UnregisterInputEvent(uint64_t id);
 FUNCTION_PREFIX int64_t RegisterHudElement(HudElementCallback callback);
 FUNCTION_PREFIX void UnregisterHudElement(uint64_t id);

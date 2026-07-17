@@ -90,7 +90,7 @@ namespace SKSEMenuFramework {
 
         public:
             InputEvent(InputEventCallback callback) {
-                static auto func = Internal::GetFunction<RegisterInputEventFuction>("RegisterInpoutEvent");
+                static auto func = Internal::GetFunction<RegisterInputEventFuction>("RegisterInputEvent");
                 if (func) {
                     id = func(callback);
                 }

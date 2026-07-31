@@ -187,6 +187,17 @@ git clone --recursive https://github.com/alandtse/CommonLibVR
 cd CommonLibVR
 git checkout ng
 ```
+
+## Building
+
+Build with Visual Studio or on the command line:
+
+```powershell
+cmake --preset release
+cmake --build build/release --config Release
+# or: cmake --preset relwithdebuginfo && cmake --build build/relwithdebinfo --config RelWithDebInfo
+# or: cmake --preset debug && cmake --build build/debug --config Debug
+```
   
 ## Optional ouput folder optional variables
 

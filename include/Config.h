@@ -23,6 +23,7 @@ class Config {
     static bool EnableCyrillic;
     static bool EnableThai;
     static bool EnableTurkish;
+    static bool EnablePolish;
     static float FontSizeMedium;
     static float NormalizeFontSize(float size);
     static void LoadStyle();

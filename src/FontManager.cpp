@@ -21,6 +21,16 @@ namespace {
         0x015E, 0x015F, // S with cedilla
         0,
     };
+    constexpr ImWchar POLISH_GLYPH_RANGES[] = {
+        0x00D3, 0x00D3,  // O-acute (caps)
+        0x00F3, 0x00F3,  // O-acute (small)
+        0x0104, 0x0107,  // A-ogonek (caps/small), C-acute (caps/small)
+        0x0118, 0x0119,  // E-ogonek (caps/small)
+        0x0141, 0x0144,  // L-stroke (caps/small), N-acute (caps/small)
+        0x015A, 0x015B,  // S-acute (caps/small)
+        0x0179, 0x017C,  // Z-acute (caps/small), Z-dot (caps/small)
+        0,
+    };
 
     constexpr auto FONT_DIRECTORY = "Data/SKSE/Plugins/Fonts";
 
@@ -96,6 +106,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         if (Config::EnableCyrillic) builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
         if (Config::EnableThai) builder.AddRanges(io.Fonts->GetGlyphRangesThai());
         if (Config::EnableTurkish) builder.AddRanges(TURKISH_GLYPH_RANGES);
+        if (Config::EnablePolish) builder.AddRanges(POLISH_GLYPH_RANGES);
 
         builder.BuildRanges(&persistentGlyphRanges[size]);
 

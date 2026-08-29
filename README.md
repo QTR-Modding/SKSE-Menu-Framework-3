@@ -1,3 +1,9 @@
+## Header file and license
+
+The header file has a license that does not require mods using it as a library to be open source and with the same license
+
+https://github.com/QTR-Modding/SKSE-Menu-Framework-3-API
+
 # Updating
 
 Mods using the old header should be fully compatible; however, if you want to use the new features, you need to update the [header file](https://github.com/QTR-Modding/SKSE-Menu-Framework-3/blob/master/resources/SKSEMenuFramework.h)

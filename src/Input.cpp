@@ -1,5 +1,10 @@
 #include "Input.h"
+#include "Config.h"
 #include "imgui.h"
+
+#include <algorithm>
+#include <cfloat>
+#include <cmath>
 
 
 ImGuiKey ParseKeyFromKeyboard(RE::BSKeyboardDevice::Key a_key) {
@@ -245,6 +250,10 @@ inline ImGuiKey ParseKeyFromGamepad(RE::BSWin32GamepadDevice::Key a_key) {
             return ImGuiKey_GamepadL1;
         case RE::BSWin32GamepadDevice::Key::kRightShoulder:
             return ImGuiKey_GamepadR1;
+        case RE::BSWin32GamepadDevice::Key::kLeftTrigger:
+            return ImGuiKey_GamepadL2;
+        case RE::BSWin32GamepadDevice::Key::kRightTrigger:
+            return ImGuiKey_GamepadR2;
         case RE::BSWin32GamepadDevice::Key::kA:
             return ImGuiKey_GamepadFaceDown;
         case RE::BSWin32GamepadDevice::Key::kB:
@@ -262,6 +271,51 @@ inline ImGuiKey ParseKeyFromGamepad(std::uint32_t a_key) {
     return ParseKeyFromGamepad(static_cast<RE::BSWin32GamepadDevice::Key>(a_key));
 }
 
+namespace {
+    // Below this the stick is treated as centred; roughly the XInput default.
+    constexpr float kStickDeadzone = 0.35f;
+    // Cursor travel at full tilt, in virtual pixels per second.
+    constexpr float kCursorSpeed = 1400.0f;
+
+    float g_cursorX = -1.0f;
+    float g_cursorY = -1.0f;
+}
+
+// The left stick mirrors the d-pad for ImGui navigation; the right stick drives
+// the cursor. Without the latter there is no controller route to any
+// pointer-driven widget (sliders, drags, window title bars), while
+// io.MouseDrawCursor is on.
+inline void TranslateThumbstickEvent(ImGuiIO& io, const RE::ThumbstickEvent* stick) {
+    if (stick->IsLeft()) {
+        io.AddKeyEvent(ImGuiKey_GamepadLStickLeft, stick->xValue < -kStickDeadzone);
+        io.AddKeyEvent(ImGuiKey_GamepadLStickRight, stick->xValue > kStickDeadzone);
+        io.AddKeyEvent(ImGuiKey_GamepadLStickUp, stick->yValue > kStickDeadzone);
+        io.AddKeyEvent(ImGuiKey_GamepadLStickDown, stick->yValue < -kStickDeadzone);
+        return;
+    }
+
+    if (!stick->IsRight()) {
+        return;
+    }
+
+    const float x = std::abs(stick->xValue) > kStickDeadzone ? stick->xValue : 0.0f;
+    const float y = std::abs(stick->yValue) > kStickDeadzone ? stick->yValue : 0.0f;
+    if (x == 0.0f && y == 0.0f) {
+        return;
+    }
+
+    if (g_cursorX < 0.0f || g_cursorY < 0.0f) {
+        const bool hasCursor = io.MousePos.x > -FLT_MAX && io.MousePos.y > -FLT_MAX;
+        g_cursorX = hasCursor ? io.MousePos.x : io.DisplaySize.x * 0.5f;
+        g_cursorY = hasCursor ? io.MousePos.y : io.DisplaySize.y * 0.5f;
+    }
+
+    const float dt = io.DeltaTime > 0.0f ? io.DeltaTime : 1.0f / 60.0f;
+    g_cursorX = std::clamp(g_cursorX + x * kCursorSpeed * dt, 0.0f, io.DisplaySize.x);
+    g_cursorY = std::clamp(g_cursorY - y * kCursorSpeed * dt, 0.0f, io.DisplaySize.y);
+    io.AddMousePosEvent(g_cursorX, g_cursorY);
+}
+
 inline void TranslateButtonEvent(ImGuiIO& io, const RE::ButtonEvent* button) {
     if (!button->HasIDCode()) {
         return;
@@ -270,6 +324,9 @@ inline void TranslateButtonEvent(ImGuiIO& io, const RE::ButtonEvent* button) {
     switch (button->GetDevice()) {
         case RE::INPUT_DEVICE::kKeyboard:{
             auto imKey = ParseKeyFromKeyboard(button->GetIDCode());
+            if (imKey == ImGuiKey_None) {
+                break;
+            }
             auto pressed = button->IsPressed();
             io.AddKeyEvent(imKey, pressed);
         } break;
@@ -288,6 +345,9 @@ inline void TranslateButtonEvent(ImGuiIO& io, const RE::ButtonEvent* button) {
         } break;
         case RE::INPUT_DEVICE::kGamepad: {
             auto imKey = ParseKeyFromGamepad(button->GetIDCode());
+            if (imKey == ImGuiKey_None) {
+                break;
+            }
             io.AddKeyEvent(imKey, button->IsPressed());
         } break;
         default:
@@ -301,6 +361,8 @@ void UI::TranslateInputEvent(RE::InputEvent* const* a_event) {
     for (auto event = *a_event; event; event = event->next) {
         if (auto button = event->AsButtonEvent()) {
             TranslateButtonEvent(io, button);
+        } else if (auto thumbstick = event->AsThumbstickEvent()) {
+            TranslateThumbstickEvent(io, thumbstick);
         } else if (auto charEvent = event->AsCharEvent()) {
             io.AddInputCharacter(charEvent->keyCode);
         }
@@ -320,7 +382,7 @@ void DoublePressDetector::press(){
 DoublePressDetector::operator bool() const {
     const auto [first, second] = last_pressed_times;
     const int diff = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(second - first).count());
-    return std::abs(diff) < double_press_threshold;
+    return std::abs(diff) < Config::DoublePressThreshold;
     
 }
 void DoublePressDetector::reset(){ last_pressed_times = {Timestamp::min(), Timestamp::min()};};

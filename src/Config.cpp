@@ -8,6 +8,8 @@ unsigned int Config::ToggleKey = 0x3B;
 uint8_t Config::ToggleMode = 0;
 unsigned int Config::ToggleKeyGamePad = 0;
 uint8_t Config::ToggleModeGamePad = 0;
+int Config::DoublePressThreshold = 300;
+bool Config::ConsumeToggleKey = false;
 bool Config::FreezeTimeOnMenu = true;
 int Config::MenuStyle = 0;
 std::vector<std::string> Config::MenuStyles;
@@ -33,6 +35,10 @@ void Config::Init() {
 
     ToggleKeyGamePad = GetKeyBinding(ini->GetString("ToggleKeyGamePad", ""),RE::INPUT_DEVICE::kGamepad);
     ToggleModeGamePad = GetToggleMode(ini->GetString("ToggleModeGamePad", "DoublePress"));
+    DoublePressThreshold = ini->GetInt("DoublePressThreshold", 300);
+    if (DoublePressThreshold < 50) DoublePressThreshold = 50;
+    if (DoublePressThreshold > 2000) DoublePressThreshold = 2000;
+    ConsumeToggleKey = ini->GetBool("ConsumeToggleKey", false);
 
     FreezeTimeOnMenu = ini->GetBool("FreezeTimeOnMenu", true);
     BlurBackgroundOnMenu = ini->GetBool("BlurBackgroundOnMenu", true);

@@ -387,6 +387,23 @@ void __stdcall UI::RenderMenuWindow() {
     ImGui::End();
 }
 
+UI::BackAction UI::ResolveBack() {
+    // Let ImGui cancel first: a modal, or an in-progress edit, is "inside" the
+    // page and has to unwind before the page itself does.
+    if (ImGui::IsAnyItemActive() ||
+        ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
+        return BackAction::PassToImGui;
+    }
+
+    // A page is showing: back means return to the tree, not leave the menu.
+    if (display_node) {
+        display_node = nullptr;
+        return BackAction::PoppedPage;
+    }
+
+    return BackAction::CloseMenu;
+}
+
 void UI::AddToTree(UI::MenuTree* node, std::vector<std::string>& path, RenderFunction render, std::string title) {
     if (!path.empty()) {
         auto currentName = path.front();

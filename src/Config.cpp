@@ -19,6 +19,7 @@ bool Config::EnableKorean = false;
 bool Config::EnableCyrillic = false;
 bool Config::EnableThai = false;
 bool Config::EnableTurkish = false;
+bool Config::EnablePolish = false;
 float Config::FontSizeMedium = 32.0f;
 float Config::MinFontSize = 12.0f;
 float Config::MaxFontSize = 64.0f;
@@ -49,6 +50,7 @@ void Config::Init() {
     EnableCyrillic = ini->GetBool("EnableCyrillic", false);
     EnableThai = ini->GetBool("EnableThai", false);
     EnableTurkish = ini->GetBool("EnableTurkish", false);
+    EnablePolish = ini->GetBool("EnablePolish", false);
     MinFontSize = ini->GetFloat("MinFontSize", 12.0f);
     MaxFontSize = ini->GetFloat("MaxFontSize", 64.0f);
     if (!std::isfinite(MinFontSize)) {
@@ -121,6 +123,7 @@ void Config::Save() {
     ini->SetBool("EnableCyrillic", EnableCyrillic);
     ini->SetBool("EnableThai", EnableThai);
     ini->SetBool("EnableTurkish", EnableTurkish);
+    ini->SetBool("EnablePolish", EnablePolish);
 
     ini->SetFloat("MinFontSize", MinFontSize);
     ini->SetFloat("MaxFontSize", MaxFontSize);

@@ -8,10 +8,8 @@
 #define FUNCTION_PREFIX extern "C" [[maybe_unused]] __declspec(dllexport)
 
 FUNCTION_PREFIX void AddSectionItem(const char* path, RenderFunction rendererFunction);
-FUNCTION_PREFIX bool RenameSection(const char* sectionPath, const char* newName);
-FUNCTION_PREFIX bool DeleteSection(const char* sectionPath);
-FUNCTION_PREFIX bool RenameSectionItem(const char* fullPagePath, const char* newName);
-FUNCTION_PREFIX bool DeleteSectionItem(const char* fullPagePath);
+FUNCTION_PREFIX bool RenameSection(const char* path, const char* newName);
+FUNCTION_PREFIX bool DeleteSection(const char* path);
 FUNCTION_PREFIX WindowInterface* AddWindow(RenderFunction rendererFunction);
 FUNCTION_PREFIX void PushBig();
 FUNCTION_PREFIX void PushDefault();

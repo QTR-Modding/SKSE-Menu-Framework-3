@@ -22,20 +22,12 @@ void AddSectionItem(const char* path, RenderFunction rendererFunction) {
     AddToTree(UI::RootMenu, pathSplit, rendererFunction, pathSplit.back());
 }
 
-bool RenameSection(const char* sectionPath, const char* newName) {
-    return UI::QueueMenuMutation({UI::MenuMutationType::Rename, sectionPath ? sectionPath : "", newName ? newName : ""});
+bool RenameSection(const char* path, const char* newName) {
+    return UI::QueueMenuMutation({UI::MenuMutationType::Rename, path ? path : "", newName ? newName : ""});
 }
 
-bool DeleteSection(const char* sectionPath) {
-    return UI::QueueMenuMutation({UI::MenuMutationType::Delete, sectionPath ? sectionPath : "", ""});
-}
-
-bool RenameSectionItem(const char* fullPagePath, const char* newName) {
-    return UI::QueueMenuMutation({UI::MenuMutationType::Rename, fullPagePath ? fullPagePath : "", newName ? newName : ""});
-}
-
-bool DeleteSectionItem(const char* fullPagePath) {
-    return UI::QueueMenuMutation({UI::MenuMutationType::Delete, fullPagePath ? fullPagePath : "", ""});
+bool DeleteSection(const char* path) {
+    return UI::QueueMenuMutation({UI::MenuMutationType::Delete, path ? path : "", ""});
 }
 
 WindowInterface* AddWindow(RenderFunction rendererFunction) { 

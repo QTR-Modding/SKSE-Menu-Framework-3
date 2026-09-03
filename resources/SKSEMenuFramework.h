@@ -71,10 +71,8 @@ namespace SKSEMenuFramework {
         using AddWindowWithViewFunction = Model::WindowInterface* (*)(RenderFunction, const char*);
         using GetMainWindowFunction = Model::WindowInterface* (*)();
         using AddSectionItemFunction = void (*)(const char* path, RenderFunction rendererFunction);
-        using RenameSectionFunction = bool (*)(const char* sectionPath, const char* newName);
-        using DeleteSectionFunction = bool (*)(const char* sectionPath);
-        using RenameSectionItemFunction = bool (*)(const char* fullPagePath, const char* newName);
-        using DeleteSectionItemFunction = bool (*)(const char* fullPagePath);
+        using RenameSectionFunction = bool (*)(const char* path, const char* newName);
+        using DeleteSectionFunction = bool (*)(const char* path);
 
         using RegisterInputEventFuction = int64_t (*)(InputEventCallback callback);
         using UnregisterInputEventFuction = void (*)(uint64_t id);
@@ -159,32 +157,14 @@ namespace SKSEMenuFramework {
         }
     }
 
-    inline bool FullPathRenameSection(std::string oldPath, std::string newPath) {
+    inline bool RenameSection(std::string path, std::string newName) {
         static auto func = Model::Internal::GetFunction<Model::RenameSectionFunction>("RenameSection");
-        if (func) {
-            return func(oldPath.c_str(), newPath.c_str());
-        }
+        return func ? func(path.c_str(), newName.c_str()) : false;
     }
 
-    inline bool FullPathDeleteSection(std::string path) {
+    inline bool DeleteSection(std::string path) {
         static auto func = Model::Internal::GetFunction<Model::DeleteSectionFunction>("DeleteSection");
-        if (func) {
-            return func(path.c_str());
-        }
-    }
-
-    inline bool RenameSectionItem(std::string oldPath, std::string newPath) {
-        static auto func = Model::Internal::GetFunction<Model::RenameSectionItemFunction>("RenameSectionItem");
-        if (func) {
-            return func(oldPath.c_str(), newPath.c_str());
-        }
-    }
-
-    inline bool FullPathDeleteSectionItem(std::string path) {
-        static auto func = Model::Internal::GetFunction<Model::DeleteSectionItemFunction>("DeleteSectionItem");
-        if (func) {
-            return func(path.c_str());
-        }
+        return func ? func(path.c_str()) : false;
     }
 
     inline Model::WindowInterface* AddWindow(Model::RenderFunction rendererFunction, bool doesWindowPauseGame = true) {

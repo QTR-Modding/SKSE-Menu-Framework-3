@@ -52,6 +52,28 @@ Here is what this example will look like (The style of the picture is outdated):
 
 ![image](https://github.com/Thiago099/SKSE-Menu-Framework-SDK/assets/66787043/8ebcd191-55a3-498b-bf36-0ca7337eff3a)
 
+## Renaming and deleting pages at runtime
+
+Page paths are relative to the section selected with `SetSection`. Use the complete relative path for nested pages:
+
+```cpp
+SKSEMenuFramework::SetSection("My Mod");
+
+SKSEMenuFramework::RenameSectionItem("Settings/Gameplay", "Combat");
+SKSEMenuFramework::DeleteSectionItem("Settings/Combat");
+```
+
+Rename or delete the current section with:
+
+```cpp
+SKSEMenuFramework::RenameSection("My Renamed Mod");
+SKSEMenuFramework::DeleteSection();
+```
+
+These functions return `true` when the request is accepted. They return `false` for invalid or missing paths, name collisions, or when the installed framework does not support the operation. A new name must be a single non-empty path segment.
+
+Renaming an open page preserves its selection. Deleting the open page, or deleting a section that contains it, clears the selection. The framework does not automatically select another page.
+
 ## Font Awesome
 
 Header file

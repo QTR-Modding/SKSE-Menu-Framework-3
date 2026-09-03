@@ -7,11 +7,35 @@
 #include "TextureLoader.h"
 #include "WindowManager.h"
 
-#define MENU_FRAMEWORK_VERSION 3.7f
+#define MENU_FRAMEWORK_VERSION 3.8f
 
 void AddSectionItem(const char* path, RenderFunction rendererFunction) { 
+    if (!path || !rendererFunction) {
+        return;
+    }
+
     auto pathSplit = SplitString(path, '/');
+    if (pathSplit.empty()) {
+        return;
+    }
+
     AddToTree(UI::RootMenu, pathSplit, rendererFunction, pathSplit.back());
+}
+
+bool RenameSection(const char* sectionPath, const char* newName) {
+    return UI::QueueMenuMutation({UI::MenuMutationType::Rename, sectionPath ? sectionPath : "", newName ? newName : ""});
+}
+
+bool DeleteSection(const char* sectionPath) {
+    return UI::QueueMenuMutation({UI::MenuMutationType::Delete, sectionPath ? sectionPath : "", ""});
+}
+
+bool RenameSectionItem(const char* fullPagePath, const char* newName) {
+    return UI::QueueMenuMutation({UI::MenuMutationType::Rename, fullPagePath ? fullPagePath : "", newName ? newName : ""});
+}
+
+bool DeleteSectionItem(const char* fullPagePath) {
+    return UI::QueueMenuMutation({UI::MenuMutationType::Delete, fullPagePath ? fullPagePath : "", ""});
 }
 
 WindowInterface* AddWindow(RenderFunction rendererFunction) { 

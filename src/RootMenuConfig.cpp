@@ -85,3 +85,26 @@ void RootMenuConfig::SetFavorite(const std::string& menuName, bool favorite) {
 void RootMenuConfig::SetArchived(const std::string& menuName, bool archived) {
     SetMenuState(archivedMenus, menuName, archived);
 }
+
+void RootMenuConfig::RenameMenu(const std::string& oldName, const std::string& newName) {
+    bool changed = false;
+    if (favoriteMenus.erase(oldName) > 0) {
+        favoriteMenus.insert(newName);
+        changed = true;
+    }
+    if (archivedMenus.erase(oldName) > 0) {
+        archivedMenus.insert(newName);
+        changed = true;
+    }
+    if (changed) {
+        Save();
+    }
+}
+
+void RootMenuConfig::RemoveMenu(const std::string& menuName) {
+    const bool favoriteRemoved = favoriteMenus.erase(menuName) > 0;
+    const bool archivedRemoved = archivedMenus.erase(menuName) > 0;
+    if (favoriteRemoved || archivedRemoved) {
+        Save();
+    }
+}

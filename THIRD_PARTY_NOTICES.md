@@ -15,4 +15,4 @@ Source snapshot: a6fd06daa035ba7aea531e13b22176b433229646
 License: MIT
 Copyright (c) 2024 ccld
 
-The complete applicable license texts are included in the LICENSES directory.
+The complete applicable license texts are included in the Third Party directory.

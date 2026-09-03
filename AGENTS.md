@@ -24,3 +24,4 @@ When you are finally implementing:
 - Do not attempt to build C++ or cmake.
 - Do not use smart points or ComPtr.
 - Do not declare pointers with "auto*", "auto" is fine.
+- Do not rename or delete any function from include/SKSEMenuFramework.h unless specifically asked to do it

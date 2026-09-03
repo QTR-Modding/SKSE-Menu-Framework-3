@@ -38,7 +38,7 @@ namespace {
 
     std::recursive_mutex menuTreeMutex;
     std::deque<UI::MenuMutation> pendingMenuMutations;
-    std::set<std::string> projectedMenuPaths;
+    std::set<MenuPath::Segments> projectedMenuPaths;
 
     std::string pendingArchiveMenuName;
     UI::MenuTree* pendingArchiveMenu = nullptr;
@@ -111,61 +111,49 @@ namespace {
         return false;
     }
 
-    bool IsValidMenuPath(const std::string& path) {
-        if (path.empty() || path.front() == '/' || path.back() == '/') {
-            return false;
-        }
-
-        const auto parts = SplitString(path, '/');
-        return !parts.empty() && std::none_of(parts.begin(), parts.end(), [](const std::string& part) {
-            return part.empty();
-        });
+    MenuPath::Segments GetRenamedPath(const MenuPath::Segments& path, const std::string& newName) {
+        auto renamedPath = path;
+        renamedPath.back() = newName;
+        return renamedPath;
     }
 
-    bool IsValidMenuName(const std::string& name) {
-        return !name.empty() && name.find('/') == std::string::npos;
+    bool IsPathInSubtree(const MenuPath::Segments& path, const MenuPath::Segments& subtreePath) {
+        return path.size() >= subtreePath.size() &&
+               std::equal(subtreePath.begin(), subtreePath.end(), path.begin());
     }
 
-    std::string GetParentPath(const std::string& path) {
-        const auto separator = path.find_last_of('/');
-        return separator == std::string::npos ? "" : path.substr(0, separator);
-    }
-
-    std::string GetRenamedPath(const std::string& path, const std::string& newName) {
-        const auto parentPath = GetParentPath(path);
-        return parentPath.empty() ? newName : parentPath + "/" + newName;
-    }
-
-    bool IsPathInSubtree(const std::string& path, const std::string& subtreePath) {
-        return path == subtreePath || path.starts_with(subtreePath + "/");
-    }
-
-    void CollectMenuPaths(const UI::MenuTree* node, const std::string& parentPath, std::set<std::string>& paths) {
+    void CollectMenuPaths(const UI::MenuTree* node, MenuPath::Segments& parentPath,
+                          std::set<MenuPath::Segments>& paths) {
         for (const auto& [name, child] : node->Children) {
-            const auto childPath = parentPath.empty() ? name : parentPath + "/" + name;
-            paths.insert(childPath);
-            CollectMenuPaths(child, childPath, paths);
+            parentPath.push_back(name);
+            paths.insert(parentPath);
+            CollectMenuPaths(child, parentPath, paths);
+            parentPath.pop_back();
         }
     }
 
     void RebuildProjectedMenuPaths() {
         projectedMenuPaths.clear();
-        CollectMenuPaths(UI::RootMenu, "", projectedMenuPaths);
+        MenuPath::Segments rootPath;
+        CollectMenuPaths(UI::RootMenu, rootPath, projectedMenuPaths);
     }
 
     void ProjectMenuMutation(const UI::MenuMutation& mutation) {
         if (mutation.Type == UI::MenuMutationType::Delete) {
-            std::erase_if(projectedMenuPaths, [&mutation](const std::string& path) {
+            std::erase_if(projectedMenuPaths, [&mutation](const MenuPath::Segments& path) {
                 return IsPathInSubtree(path, mutation.Path);
             });
             return;
         }
 
         const auto renamedPath = GetRenamedPath(mutation.Path, mutation.NewName);
-        std::set<std::string> renamedPaths;
+        std::set<MenuPath::Segments> renamedPaths;
         for (const auto& path : projectedMenuPaths) {
             if (IsPathInSubtree(path, mutation.Path)) {
-                renamedPaths.insert(renamedPath + path.substr(mutation.Path.size()));
+                auto renamedDescendantPath = renamedPath;
+                renamedDescendantPath.insert(renamedDescendantPath.end(), path.begin() + mutation.Path.size(),
+                                             path.end());
+                renamedPaths.insert(std::move(renamedDescendantPath));
             } else {
                 renamedPaths.insert(path);
             }
@@ -173,11 +161,10 @@ namespace {
         projectedMenuPaths.swap(renamedPaths);
     }
 
-    bool FindMenuNode(const std::string& path, MenuNodeLocation& location) {
+    bool FindMenuNode(const MenuPath::Segments& path, MenuNodeLocation& location) {
         UI::MenuTree* parent = UI::RootMenu;
-        const auto parts = SplitString(path, '/');
 
-        for (const auto& name : parts) {
+        for (const auto& name : path) {
             const auto child = parent->Children.find(name);
             if (child == parent->Children.end()) {
                 return false;
@@ -281,7 +268,7 @@ namespace {
                                      ? RenameMenuNode(mutation)
                                      : DeleteMenuNode(mutation);
             if (!applied) {
-                logger::warn("Could not apply queued Mod Control Panel mutation for '{}'.", mutation.Path);
+                logger::warn("Could not apply queued Mod Control Panel mutation for '{}'.", mutation.RequestedPath);
             }
         }
         projectedMenuPaths.clear();
@@ -456,15 +443,23 @@ void RenderNode(std::pair<const std::string, UI::MenuTree*>& node) {
     }
 }
 
-bool UI::QueueMenuMutation(MenuMutation mutation) {
-    std::lock_guard<std::recursive_mutex> lock(menuTreeMutex);
+bool UI::QueueMenuMutation(MenuMutationType type, std::string_view path, std::string_view newName) {
+    auto parsedPath = MenuPath::Parse(path);
+    if (!parsedPath) {
+        return false;
+    }
 
-    if (!IsValidMenuPath(mutation.Path)) {
-        return false;
+    std::string parsedNewName;
+    if (type == MenuMutationType::Rename) {
+        auto parsedName = MenuPath::ParseSegment(newName);
+        if (!parsedName) {
+            return false;
+        }
+        parsedNewName = std::move(*parsedName);
     }
-    if (mutation.Type == MenuMutationType::Rename && !IsValidMenuName(mutation.NewName)) {
-        return false;
-    }
+
+    MenuMutation mutation{type, std::move(*parsedPath), std::move(parsedNewName), std::string(path)};
+    std::lock_guard<std::recursive_mutex> lock(menuTreeMutex);
 
     if (pendingMenuMutations.empty()) {
         RebuildProjectedMenuPaths();

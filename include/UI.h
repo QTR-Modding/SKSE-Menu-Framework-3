@@ -1,5 +1,6 @@
 #pragma once
 
+#include "MenuPath.h"
 #include "WindowManager.h"
 
 namespace UI {
@@ -10,8 +11,9 @@ namespace UI {
 
     struct MenuMutation {
         MenuMutationType Type;
-        std::string Path;
+        MenuPath::Segments Path;
         std::string NewName;
+        std::string RequestedPath;
     };
 
     class MenuTree {
@@ -24,7 +26,7 @@ namespace UI {
     extern UI::MenuTree* RootMenu;
     void __stdcall RenderMenuWindow();
     void AddToTree(UI::MenuTree* node, std::vector<std::string>& path, RenderFunction render, std::string title);
-    bool QueueMenuMutation(MenuMutation mutation);
+    bool QueueMenuMutation(MenuMutationType type, std::string_view path, std::string_view newName = {});
     void ApplyPendingMenuMutations();
     void __stdcall RenderConfigWindow();
 }

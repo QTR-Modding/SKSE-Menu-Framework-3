@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <cstdint>
 #include <codecvt>
 #include <locale>
 #include <string>
@@ -84,6 +85,7 @@ namespace SKSEMenuFramework {
         using LoadTextureFuction = ImGuiMCP::ImTextureID (*)(const char* texturePath, ImGuiMCP::ImVec2* size);
         using DisposeTextureFuction = void (*)(const char* texturePath);
         using GetMenuFrameworkVersionFunction = float (*)();
+        using GetMenuFrameworkAPIVersionFunction = uint32_t (*)();
         using SetHotkeyEnabledFunction = void (*)(bool enabled);
         using IsHotkeyEnabledFunction = bool (*)();
 
@@ -143,6 +145,7 @@ namespace SKSEMenuFramework {
         };
     }
 
+    // Menu paths use unescaped '/' characters as separators. Prefix a literal slash with a backslash.
     inline void AddSectionItem(std::string menu, Model::RenderFunction rendererFunction) {
         static auto func = Model::Internal::GetFunction<Model::AddSectionItemFunction>("AddSectionItem");
         if (func) {
@@ -220,6 +223,12 @@ namespace SKSEMenuFramework {
         }
 
         return 0.0;
+    }
+
+    inline uint32_t GetMenuFrameworkAPIVersion() {
+        static auto func = Model::Internal::GetFunction<Model::GetMenuFrameworkAPIVersionFunction>(
+            "GetMenuFrameworkAPIVersion");
+        return func ? func() : 0;
     }
 
     inline bool IsAnyBlockingWindowOpened() {

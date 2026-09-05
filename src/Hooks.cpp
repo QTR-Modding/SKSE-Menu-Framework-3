@@ -1,6 +1,7 @@
 #include "Hooks.h"
 #include <format>
 #include "Renderer.h"
+#include "UI.h"
 #include "FontManager.h"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
@@ -306,6 +307,7 @@ void Render() {
         io.MouseDrawCursor = false;
         GameLock::SetState(GameLock::State::Unlocked);
     }
+    UI::SaveWindowSettings();
     FontManager::CleanFont();
     ImGui::EndFrame();
     ImGui::Render();

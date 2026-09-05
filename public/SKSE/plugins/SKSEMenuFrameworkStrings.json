@@ -19,6 +19,7 @@
   "Settings.ResetWindows": "Reset Windows",
   "Settings.FreezeTime": "Freeze Time",
   "Settings.BlurBackground": "Blur Background",
+  "Settings.Font": "Font:",
   "Settings.FontSize": "Font Size",
   "Settings.FontSize.Apply": "Apply Font Size",
   "Settings.ToggleMode.Keyboard": "Toggle Mode (Keyboard):",

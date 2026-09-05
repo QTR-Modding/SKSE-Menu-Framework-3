@@ -821,6 +821,23 @@ void UI::RenderConfigWindow() {
             Config::Save();
         }
 
+        ImGui::TextUnformatted(Translations::Get("Settings.Font"));
+        const auto& fonts = FontManager::fontSizes["Default"];
+        if (ImGui::BeginCombo("##PrimaryFont", fonts.defaultFontName.c_str())) {
+            for (const auto& name : fonts.textFontNames) {
+                const bool isSelected = ImStricmp(name.c_str(), fonts.defaultFontName.c_str()) == 0;
+                if (ImGui::Selectable(name.c_str(), isSelected) && ImStricmp(name.c_str(), Config::PrimaryFont.c_str()) != 0) {
+                    Config::PrimaryFont = name;
+                    Config::Save();
+                    FontManager::RequestAtlasRebuild();
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+
         static float pendingFontSize = Config::FontSizeMedium;
         const auto fontSizeLabel = std::format("{} ({:g}-{:g}):", Translations::Get("Settings.FontSize"),
             Config::MinFontSize, Config::MaxFontSize);

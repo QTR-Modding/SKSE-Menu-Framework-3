@@ -1,6 +1,7 @@
 #include "UI.h"
 #include "WindowManager.h"
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <imgui.h>
 #include <mutex>
@@ -45,16 +46,38 @@ namespace {
     bool archiveConfirmationRequested = false;
 
     struct WindowSizeAndPosition {
+        const char* Section;
         bool HasSavedState = false;
+        bool PendingSave = false;
         ImVec2 Position{};
         ImVec2 Size{};
     };
 
-    WindowSizeAndPosition mainWindowSizeAndPosition;
-    WindowSizeAndPosition configWindowSizeAndPosition;
+    WindowSizeAndPosition mainWindowSizeAndPosition{"MainWindow"};
+    WindowSizeAndPosition configWindowSizeAndPosition{"SettingsWindow"};
 
     void ApplyWindowSizeAndPosition(WindowSizeAndPosition& sizeAndPosition, const ImVec2& defaultPosition, const ImVec2& defaultSize,
                              const ImVec2& defaultPivot = ImVec2{0.0f, 0.0f}) {
+        const auto viewport = ImGui::GetMainViewport();
+        if (!sizeAndPosition.HasSavedState && viewport->Size.x > 0.0f && viewport->Size.y > 0.0f) {
+            Ini ini("SKSEMenuFramework.ini");
+            ini.SetSection(sizeAndPosition.Section);
+            constexpr float missing = std::numeric_limits<float>::quiet_NaN();
+            const ImVec2 position{ini.GetFloat("X", missing), ini.GetFloat("Y", missing)};
+            const ImVec2 size{ini.GetFloat("Width", missing), ini.GetFloat("Height", missing)};
+            if (std::isfinite(position.x) && std::isfinite(position.y) &&
+                std::isfinite(size.x) && std::isfinite(size.y) && size.x > 0.0f && size.y > 0.0f) {
+                // Fractions survive resolution changes; keep restored windows inside the display.
+                sizeAndPosition.Size = ImClamp(ImMin(size, ImVec2{1.0f, 1.0f}) * viewport->Size,
+                    ImMin(ImGui::GetStyle().WindowMinSize, viewport->Size), viewport->Size);
+                // Round INI fractions back to pixels before ImGui truncates them on Begin.
+                sizeAndPosition.Size = {std::round(sizeAndPosition.Size.x), std::round(sizeAndPosition.Size.y)};
+                sizeAndPosition.Position = viewport->Pos + ImClamp(position, ImVec2{},
+                    ImVec2{1.0f, 1.0f} - sizeAndPosition.Size / viewport->Size) * viewport->Size;
+                sizeAndPosition.Position = {std::round(sizeAndPosition.Position.x), std::round(sizeAndPosition.Position.y)};
+                sizeAndPosition.HasSavedState = true;
+            }
+        }
         if (sizeAndPosition.HasSavedState) {
             ImGui::SetNextWindowPos(sizeAndPosition.Position, ImGuiCond_Appearing);
             ImGui::SetNextWindowSize(sizeAndPosition.Size, ImGuiCond_Appearing);
@@ -65,6 +88,8 @@ namespace {
     }
 
     void SaveWindowSizeAndPosition(WindowSizeAndPosition& sizeAndPosition) {
+        sizeAndPosition.PendingSave |= sizeAndPosition.HasSavedState &&
+            (sizeAndPosition.Position != ImGui::GetWindowPos() || sizeAndPosition.Size != ImGui::GetWindowSize());
         sizeAndPosition.Position = ImGui::GetWindowPos();
         sizeAndPosition.Size = ImGui::GetWindowSize();
         sizeAndPosition.HasSavedState = true;
@@ -76,6 +101,7 @@ namespace {
     }
 
     void SetWindowSizeAndPosition(WindowSizeAndPosition& sizeAndPosition, const ImVec2& position, const ImVec2& size) {
+        sizeAndPosition.PendingSave = true;
         sizeAndPosition.Position = position;
         sizeAndPosition.Size = size;
         sizeAndPosition.HasSavedState = true;
@@ -483,6 +509,37 @@ bool UI::QueueMenuMutation(MenuMutationType type, std::string_view path, std::st
 void UI::ApplyPendingMenuMutations() {
     std::lock_guard<std::recursive_mutex> lock(menuTreeMutex);
     ApplyPendingMenuMutationsLocked();
+}
+
+void UI::SaveWindowSettings() {
+    if ((!mainWindowSizeAndPosition.PendingSave && !configWindowSizeAndPosition.PendingSave) ||
+        ((WindowManager::MainInterface->IsOpen || WindowManager::ConfigInterface->IsOpen) &&
+         (ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::GetCurrentContext()->NavWindowingTarget))) {
+        return;
+    }
+    const auto viewport = ImGui::GetMainViewport();
+    if (viewport->Size.x <= 0.0f || viewport->Size.y <= 0.0f) {
+        return;
+    }
+    Ini ini("SKSEMenuFramework.ini");
+    bool saved = true;
+    for (const auto state : {&mainWindowSizeAndPosition, &configWindowSizeAndPosition}) {
+        if (!state->PendingSave) {
+            continue;
+        }
+        // Retry on the next layout change if writing fails, not on every render frame.
+        state->PendingSave = false;
+        ini.SetSection(state->Section);
+        const ImVec2 position = (state->Position - viewport->Pos) / viewport->Size;
+        const ImVec2 size = state->Size / viewport->Size;
+        saved &= ini.SetFloat("X", position.x);
+        saved &= ini.SetFloat("Y", position.y);
+        saved &= ini.SetFloat("Width", size.x);
+        saved &= ini.SetFloat("Height", size.y);
+    }
+    if (!saved || !ini.Save()) {
+        logger::warn("Failed to save window layouts to SKSEMenuFramework.ini");
+    }
 }
 
 void __stdcall UI::RenderMenuWindow() {

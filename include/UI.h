@@ -28,5 +28,6 @@ namespace UI {
     void AddToTree(UI::MenuTree* node, std::vector<std::string>& path, RenderFunction render, std::string title);
     bool QueueMenuMutation(MenuMutationType type, std::string_view path, std::string_view newName = {});
     void ApplyPendingMenuMutations();
+    void SaveWindowSettings();
     void __stdcall RenderConfigWindow();
 }

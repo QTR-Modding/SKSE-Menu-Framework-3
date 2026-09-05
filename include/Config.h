@@ -12,6 +12,8 @@ class Config {
     static uint8_t ToggleMode;
     static unsigned int ToggleKeyGamePad;
     static uint8_t ToggleModeGamePad;
+    static int DoublePressThreshold;
+    static bool ConsumeToggleKey;
     static bool FreezeTimeOnMenu;
     static bool BlurBackgroundOnMenu;
     static int MenuStyle;

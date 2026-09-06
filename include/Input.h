@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 struct DoublePressDetector {
     
     void press();
@@ -30,5 +32,30 @@ bool IsSupportedDevice(RE::INPUT_DEVICE device);
 
 
 namespace UI {
-    void TranslateInputEvent(RE::InputEvent* const* a_event);
+    inline std::atomic<RE::INPUT_DEVICE> activeInputDevice{RE::INPUT_DEVICE::kKeyboard};
+    void UpdateActiveInputDevice(RE::InputEvent* const* events);
+
+    class KeyBindingCapture {
+    public:
+        enum class State { Idle, Waiting, Pressed, Complete, Cancelled, Confirming };
+        static constexpr unsigned int UnboundKey = 0;
+
+        void Begin(RE::INPUT_DEVICE device);
+        void BeginConfirmation();
+        bool IsConfirming() const;
+        void Reset();
+        bool Process(RE::InputEvent* const* events);
+        State Poll(unsigned int& key, RE::INPUT_DEVICE displayedDevice);
+
+    private:
+        std::mutex mutex;
+        std::atomic<State> state{State::Idle};
+        RE::INPUT_DEVICE captureDevice = RE::INPUT_DEVICE::kNone;
+        RE::INPUT_DEVICE device = RE::INPUT_DEVICE::kNone;
+        unsigned int key = UnboundKey;
+    };
+
+    inline KeyBindingCapture keyBindingCapture;
+
+    void TranslateInputEvent(RE::InputEvent* const* a_event, bool capturingBinding = false);
 }

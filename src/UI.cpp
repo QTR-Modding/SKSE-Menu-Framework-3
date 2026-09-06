@@ -56,16 +56,90 @@ namespace {
     WindowSizeAndPosition mainWindowSizeAndPosition{"MainWindow"};
     WindowSizeAndPosition configWindowSizeAndPosition{"SettingsWindow"};
 
-    void RenderKeyBinding(const char* id, unsigned int& binding, RE::INPUT_DEVICE device) {
+    struct PendingToggleChange {
+        RE::INPUT_DEVICE Device = RE::INPUT_DEVICE::kNone;
+        unsigned int Key = UI::KeyBindingCapture::UnboundKey;
+        std::uint8_t Mode = 0;
+        const char* Warning = nullptr;
+        bool OpenRequested = false;
+    } pendingToggleChange;
+
+    void SaveToggleChange(RE::INPUT_DEVICE device, unsigned int key, std::uint8_t mode) {
+        const bool keyboard = device == RE::INPUT_DEVICE::kKeyboard;
+        (keyboard ? Config::ToggleKey : Config::ToggleKeyGamePad) = key;
+        (keyboard ? Config::ToggleMode : Config::ToggleModeGamePad) = mode;
+        Config::Save();
+    }
+
+    void RequestToggleChange(RE::INPUT_DEVICE device, unsigned int key, std::uint8_t mode) {
+        const bool keyboard = device == RE::INPUT_DEVICE::kKeyboard;
+        const auto currentKey = keyboard ? Config::ToggleKey : Config::ToggleKeyGamePad;
+        const auto currentMode = keyboard ? Config::ToggleMode : Config::ToggleModeGamePad;
+        if (key == currentKey && mode == currentMode) {
+            return;
+        }
+
+        const auto hasShortcut = [](unsigned int binding, std::uint8_t toggleMode) {
+            return binding != UI::KeyBindingCapture::UnboundKey && toggleMode != GetToggleMode("OFF");
+        };
+        const bool otherShortcut = keyboard ? hasShortcut(Config::ToggleKeyGamePad, Config::ToggleModeGamePad)
+                                            : hasShortcut(Config::ToggleKey, Config::ToggleMode);
+        const char* warning = nullptr;
+        if (hasShortcut(currentKey, currentMode) && !hasShortcut(key, mode) && !otherShortcut) {
+            warning = "Settings.Binding.NoShortcut";
+        } else if (!keyboard && key == RE::BSWin32GamepadDevice::Key::kA &&
+                   (key != currentKey || (currentMode == GetToggleMode("OFF") && mode != currentMode))) {
+            warning = "Settings.Binding.ConfirmConflict";
+        }
+        if (warning) {
+            pendingToggleChange = {device, key, mode, warning, true};
+            UI::keyBindingCapture.BeginConfirmation();
+        } else {
+            SaveToggleChange(device, key, mode);
+        }
+    }
+
+    void RenderBindingConfirmation() {
+        const auto title = std::format("{}###BindingWarning", Translations::Get("Settings.Binding.Warning"));
+        if (pendingToggleChange.OpenRequested) {
+            ImGui::OpenPopup(title.c_str());
+            pendingToggleChange.OpenRequested = false;
+        }
+        if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (!UI::keyBindingCapture.IsConfirming()) {
+                ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+                return;
+            }
+            ImGui::TextUnformatted(Translations::Get(pendingToggleChange.Warning));
+            ImGui::Separator();
+            // Wait for Back/Escape release so it cannot also close SMF after cancellation.
+            const bool cancel = ImGui::Button(Translations::Get("Settings.Binding.Cancel")) ||
+                ImGui::IsKeyReleased(ImGuiKey_Escape) || ImGui::IsKeyReleased(ImGuiKey_GamepadFaceRight);
+            ImGui::SetItemDefaultFocus();
+            ImGui::SameLine();
+            const bool confirm = ImGui::Button(Translations::Get("Settings.Binding.Continue"));
+            if (cancel || confirm) {
+                if (confirm && !cancel) {
+                    SaveToggleChange(pendingToggleChange.Device, pendingToggleChange.Key, pendingToggleChange.Mode);
+                }
+                UI::keyBindingCapture.Reset();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    void RenderKeyBinding(const char* id, unsigned int binding, RE::INPUT_DEVICE device) {
         ImGui::PushID(id);
+        const auto mode = device == RE::INPUT_DEVICE::kKeyboard ? Config::ToggleMode : Config::ToggleModeGamePad;
         const auto title = std::format("{}###CaptureBinding", Translations::Get("Settings.Binding.Title"));
         if (ImGui::Button(GetKeyName(binding, device).c_str(), ImVec2{ImGui::CalcItemWidth(), 0.0f})) {
             UI::keyBindingCapture.Begin(device);
             ImGui::OpenPopup(title.c_str());
         }
         if (ImGui::Button(Translations::Get("Settings.Binding.Clear")) && binding != UI::KeyBindingCapture::UnboundKey) {
-            binding = UI::KeyBindingCapture::UnboundKey;
-            Config::Save();
+            RequestToggleChange(device, UI::KeyBindingCapture::UnboundKey, mode);
         }
         if (ImGui::BeginPopupModal(title.c_str(), nullptr,
                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNavInputs)) {
@@ -78,16 +152,15 @@ namespace {
                 state = UI::KeyBindingCapture::State::Cancelled;
             }
             ImGui::EndDisabled();
-            if (state == UI::KeyBindingCapture::State::Complete && binding != newKey) {
-                binding = newKey;
-                Config::Save();
-            }
             if (state == UI::KeyBindingCapture::State::Idle ||
                 state == UI::KeyBindingCapture::State::Complete || state == UI::KeyBindingCapture::State::Cancelled) {
                 UI::keyBindingCapture.Reset();
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
+            if (state == UI::KeyBindingCapture::State::Complete) {
+                RequestToggleChange(device, newKey, mode);
+            }
         }
         ImGui::PopID();
     }
@@ -875,8 +948,7 @@ void UI::RenderConfigWindow() {
         int currentTogleMode = static_cast<int>(Config::ToggleMode);
         ImGui::Text(Translations::Get("Settings.ToggleMode.Keyboard"));
         if (ImGui::Combo("##ToggleModeCombo", &currentTogleMode, togleModeNames, IM_ARRAYSIZE(togleModeNames))) {
-            Config::ToggleMode = currentTogleMode;
-            Config::Save();
+            RequestToggleChange(RE::INPUT_DEVICE::kKeyboard, Config::ToggleKey, static_cast<std::uint8_t>(currentTogleMode));
         }
 
         ImGui::Separator();
@@ -890,12 +962,12 @@ void UI::RenderConfigWindow() {
         ImGui::Text(Translations::Get("Settings.ToggleMode.Gamepad"));
         if (ImGui::Combo("##ToggleModeComboGAmepad", &currentTogleModeGamepad, togleModeNames,
                          IM_ARRAYSIZE(togleModeNames))) {
-            Config::ToggleModeGamePad = currentTogleModeGamepad;
-            Config::Save();
+            RequestToggleChange(RE::INPUT_DEVICE::kGamepad, Config::ToggleKeyGamePad, static_cast<std::uint8_t>(currentTogleModeGamepad));
         }
 
         ImGui::Text(Translations::Get("Settings.ToggleKey.Gamepad"));
         RenderKeyBinding("ToggleKeyGamepad", Config::ToggleKeyGamePad, RE::INPUT_DEVICE::kGamepad);
+        RenderBindingConfirmation();
 
         ImGui::PopItemWidth();  // ADDED: Pop the item width
         ImGui::EndGroup();      // ADDED: End the group

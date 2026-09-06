@@ -363,6 +363,15 @@ void UI::KeyBindingCapture::Begin(RE::INPUT_DEVICE targetDevice) {
     state = State::Waiting;
 }
 
+void UI::KeyBindingCapture::BeginConfirmation() {
+    std::scoped_lock lock(mutex);
+    state = State::Confirming;
+}
+
+bool UI::KeyBindingCapture::IsConfirming() const {
+    return state.load() == State::Confirming;
+}
+
 void UI::KeyBindingCapture::Reset() {
     std::scoped_lock lock(mutex);
     state = State::Idle;
@@ -378,6 +387,9 @@ bool UI::KeyBindingCapture::Process(RE::InputEvent* const* events) {
     }
     if (state == State::Idle) {
         return false;
+    }
+    if (state == State::Confirming) {
+        return true;
     }
 
     for (auto event = *events; event; event = event->next) {

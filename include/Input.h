@@ -34,10 +34,12 @@ bool IsSupportedDevice(RE::INPUT_DEVICE device);
 namespace UI {
     class KeyBindingCapture {
     public:
-        enum class State { Idle, Waiting, Pressed, Complete, Cancelled };
+        enum class State { Idle, Waiting, Pressed, Complete, Cancelled, Confirming };
         static constexpr unsigned int UnboundKey = 0;
 
         void Begin(RE::INPUT_DEVICE device);
+        void BeginConfirmation();
+        bool IsConfirming() const;
         void Reset();
         bool Process(RE::InputEvent* const* events);
         State Poll(unsigned int& key);

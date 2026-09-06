@@ -29,5 +29,9 @@
   "Settings.Binding.Keyboard": "Press and release a key. Escape cancels.",
   "Settings.Binding.Gamepad": "Press and release a controller button. Escape cancels.",
   "Settings.Binding.Clear": "Clear",
-  "Settings.Binding.Cancel": "Cancel"
+  "Settings.Binding.Cancel": "Cancel",
+  "Settings.Binding.Warning": "Change Shortcut?",
+  "Settings.Binding.NoShortcut": "This removes your last enabled shortcut.\nYou may need to edit SKSEMenuFramework.ini to reopen this menu.",
+  "Settings.Binding.ConfirmConflict": "A is also the controller's Confirm button.\nWhile this shortcut is enabled, selecting an item will close this menu.",
+  "Settings.Binding.Continue": "Change Anyway"
 }

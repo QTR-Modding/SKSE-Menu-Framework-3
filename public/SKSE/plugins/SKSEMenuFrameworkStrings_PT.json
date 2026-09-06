@@ -29,5 +29,9 @@
   "Settings.Binding.Keyboard": "Pressione e solte uma tecla. Escape cancela.",
   "Settings.Binding.Gamepad": "Pressione e solte um botão do controle. Escape cancela.",
   "Settings.Binding.Clear": "Limpar",
-  "Settings.Binding.Cancel": "Cancelar"
+  "Settings.Binding.Cancel": "Cancelar",
+  "Settings.Binding.Warning": "Alterar Atalho?",
+  "Settings.Binding.NoShortcut": "Isto remove seu último atalho ativo.\nTalvez seja necessário editar SKSEMenuFramework.ini para reabrir este menu.",
+  "Settings.Binding.ConfirmConflict": "A também é o botão de confirmação do controle.\nCom este atalho ativo, selecionar um item fechará este menu.",
+  "Settings.Binding.Continue": "Alterar Mesmo Assim"
 }

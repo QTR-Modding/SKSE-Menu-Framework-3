@@ -113,6 +113,9 @@ namespace {
             }
             ImGui::TextUnformatted(Translations::Get(pendingToggleChange.Warning));
             ImGui::Separator();
+            if (ImGui::IsWindowAppearing()) {
+                ImGui::NavRestoreHighlightAfterMove();
+            }
             // Wait for Back/Escape release so it cannot also close SMF after cancellation.
             const bool cancel = ImGui::Button(Translations::Get("Settings.Binding.Cancel")) ||
                 ImGui::IsKeyReleased(ImGuiKey_Escape) || ImGui::IsKeyReleased(ImGuiKey_GamepadFaceRight);

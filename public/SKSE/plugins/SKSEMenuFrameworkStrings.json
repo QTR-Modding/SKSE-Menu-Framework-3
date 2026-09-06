@@ -31,7 +31,8 @@
   "Settings.Binding.Clear": "Clear",
   "Settings.Binding.Cancel": "Cancel",
   "Settings.Binding.Warning": "Change Shortcut?",
-  "Settings.Binding.NoShortcut": "This removes your last enabled shortcut.\nYou may need to edit SKSEMenuFramework.ini to reopen this menu.",
+  "Settings.Binding.NoShortcut": "This device will have no enabled shortcut.\nMake sure you have another way to reopen this menu.",
   "Settings.Binding.ConfirmConflict": "A is also the controller's Confirm button.\nWhile this shortcut is enabled, selecting an item will close this menu.",
+  "Settings.Binding.BackConflict": "B is also the controller's Back button.\nWith this shortcut enabled, Back will close the entire menu\ninstead of going back one level.",
   "Settings.Binding.Continue": "Change Anyway"
 }

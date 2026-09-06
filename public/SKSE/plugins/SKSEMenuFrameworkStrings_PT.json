@@ -31,7 +31,8 @@
   "Settings.Binding.Clear": "Limpar",
   "Settings.Binding.Cancel": "Cancelar",
   "Settings.Binding.Warning": "Alterar Atalho?",
-  "Settings.Binding.NoShortcut": "Isto remove seu último atalho ativo.\nTalvez seja necessário editar SKSEMenuFramework.ini para reabrir este menu.",
+  "Settings.Binding.NoShortcut": "Este dispositivo ficará sem um atalho ativo.\nCertifique-se de ter outra forma de reabrir este menu.",
   "Settings.Binding.ConfirmConflict": "A também é o botão de confirmação do controle.\nCom este atalho ativo, selecionar um item fechará este menu.",
+  "Settings.Binding.BackConflict": "B também é o botão Voltar do controle.\nCom este atalho ativo, Voltar fechará todo o menu\nem vez de retornar um nível.",
   "Settings.Binding.Continue": "Alterar Mesmo Assim"
 }

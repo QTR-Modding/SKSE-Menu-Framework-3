@@ -79,17 +79,14 @@ namespace {
             return;
         }
 
-        const auto hasShortcut = [](unsigned int binding, std::uint8_t toggleMode) {
-            return binding != UI::KeyBindingCapture::UnboundKey && toggleMode != GetToggleMode("OFF");
-        };
-        const bool otherShortcut = keyboard ? hasShortcut(Config::ToggleKeyGamePad, Config::ToggleModeGamePad)
-                                            : hasShortcut(Config::ToggleKey, Config::ToggleMode);
         const char* warning = nullptr;
-        if (hasShortcut(currentKey, currentMode) && !hasShortcut(key, mode) && !otherShortcut) {
+        if ((key == UI::KeyBindingCapture::UnboundKey && key != currentKey) ||
+            (mode == GetToggleMode("OFF") && mode != currentMode)) {
             warning = "Settings.Binding.NoShortcut";
-        } else if (!keyboard && key == RE::BSWin32GamepadDevice::Key::kA &&
+        } else if (!keyboard && (key == RE::BSWin32GamepadDevice::Key::kA || key == RE::BSWin32GamepadDevice::Key::kB) &&
                    (key != currentKey || (currentMode == GetToggleMode("OFF") && mode != currentMode))) {
-            warning = "Settings.Binding.ConfirmConflict";
+            warning = key == RE::BSWin32GamepadDevice::Key::kA
+                ? "Settings.Binding.ConfirmConflict" : "Settings.Binding.BackConflict";
         }
         if (warning) {
             pendingToggleChange = {device, key, mode, warning, true};
@@ -116,9 +113,10 @@ namespace {
             if (ImGui::IsWindowAppearing()) {
                 ImGui::NavRestoreHighlightAfterMove();
             }
-            // Wait for Back/Escape release so it cannot also close SMF after cancellation.
+            // Ignore the captured B release that opens this warning; a fresh Back/Escape release cancels it.
             const bool cancel = ImGui::Button(Translations::Get("Settings.Binding.Cancel")) ||
-                ImGui::IsKeyReleased(ImGuiKey_Escape) || ImGui::IsKeyReleased(ImGuiKey_GamepadFaceRight);
+                (!ImGui::IsWindowAppearing() &&
+                    (ImGui::IsKeyReleased(ImGuiKey_Escape) || ImGui::IsKeyReleased(ImGuiKey_GamepadFaceRight)));
             ImGui::SetItemDefaultFocus();
             ImGui::SameLine();
             const bool confirm = ImGui::Button(Translations::Get("Settings.Binding.Continue"));

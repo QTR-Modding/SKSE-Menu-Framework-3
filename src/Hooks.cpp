@@ -143,6 +143,12 @@ RE::InputEvent** RemoveNonPrintScreenInputs(RE::InputEvent** a_event) {
 
 void Hooks::ProcessInputQueueHook::thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher,
                                       RE::InputEvent* const* a_event) {
+    if (UI::keyBindingCapture.Process(a_event)) {
+        UI::TranslateInputEvent(a_event, true);
+        constexpr RE::InputEvent* const empty[] = {nullptr};
+        originalFunction(a_dispatcher, empty);
+        return;
+    }
     bool isInputCapturedByOpenClose = UI::Renderer::ProcessOpenClose(a_event);
 
     if (!ImGui::IsAnyItemActive()) {
@@ -164,6 +170,7 @@ void Hooks::ProcessInputQueueHook::thunk(RE::BSTEventSource<RE::InputEvent*>* a_
 
 LRESULT Hooks::WndProcHook::thunk(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if (uMsg == WM_KILLFOCUS) {
+        UI::keyBindingCapture.Reset();
         auto& io = ImGui::GetIO();
         io.ClearInputKeys();
     }

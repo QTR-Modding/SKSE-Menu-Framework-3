@@ -1,5 +1,6 @@
 #include "WindowManager.h"
 #include "Event.h"
+#include "Input.h"
 
 Window::Window() {
 	Interface = new WindowInterface();
@@ -34,6 +35,7 @@ bool WindowManager::ConsumeBlockingWindowOpened() {
 }
 
 void WindowManager::Close() {
+    UI::keyBindingCapture.Reset();
     WindowManager::MainInterface->BlockUserInput = true;
     WindowManager::ConfigInterface->BlockUserInput = true;
     ConfigInterface->IsOpen = false;

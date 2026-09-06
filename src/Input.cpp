@@ -1,5 +1,7 @@
 #include "Input.h"
 #include "Config.h"
+#include "Application.h"
+#include "WindowManager.h"
 #include "imgui.h"
 
 #include <algorithm>
@@ -355,12 +357,71 @@ inline void TranslateButtonEvent(ImGuiIO& io, const RE::ButtonEvent* button) {
     }
 }
 
-void UI::TranslateInputEvent(RE::InputEvent* const* a_event) {
+void UI::KeyBindingCapture::Begin(RE::INPUT_DEVICE targetDevice) {
+    std::scoped_lock lock(mutex);
+    device = targetDevice;
+    state = State::Waiting;
+}
+
+void UI::KeyBindingCapture::Reset() {
+    std::scoped_lock lock(mutex);
+    state = State::Idle;
+}
+
+bool UI::KeyBindingCapture::Process(RE::InputEvent* const* events) {
+    if (state.load() == State::Idle) {
+        return false;
+    }
+    std::scoped_lock lock(mutex);
+    if (!WindowManager::ConfigInterface || !WindowManager::ConfigInterface->IsOpen.load()) {
+        state = State::Idle;
+    }
+    if (state == State::Idle) {
+        return false;
+    }
+
+    for (auto event = *events; event; event = event->next) {
+        const auto button = event->AsButtonEvent();
+        if (!button || !button->HasIDCode()) {
+            continue;
+        }
+        const auto eventDevice = button->GetDevice();
+        const auto eventKey = button->GetIDCode();
+        const bool cancel = eventDevice == RE::INPUT_DEVICE::kKeyboard && eventKey == REX::W32::DIK_ESCAPE;
+        if (button->IsDown() && (cancel || (state == State::Waiting && eventDevice == device &&
+                eventKey != UnboundKey && GetKeyName(eventKey, device) != "UNKNOWN"))) {
+            device = eventDevice;
+            key = eventKey;
+            state = State::Pressed;
+        } else if (state == State::Pressed && eventDevice == device && eventKey == key && button->IsUp()) {
+            state = cancel ? State::Cancelled : State::Complete;
+        }
+    }
+    // Keep shielding the input until the Settings UI has acknowledged completion.
+    return true;
+}
+
+UI::KeyBindingCapture::State UI::KeyBindingCapture::Poll(unsigned int& capturedKey) {
+    std::scoped_lock lock(mutex);
+    const auto result = state.load();
+    if (state == State::Complete || state == State::Cancelled) {
+        capturedKey = key;
+        state = State::Idle;
+    }
+    return result;
+}
+
+void UI::TranslateInputEvent(RE::InputEvent* const* a_event, bool capturingBinding) {
     auto& io = ImGui::GetIO();
 
     for (auto event = *a_event; event; event = event->next) {
         if (auto button = event->AsButtonEvent()) {
-            TranslateButtonEvent(io, button);
+            // Release the input that opened capture, and keep mouse Cancel/Clear usable.
+            if (!capturingBinding || button->GetDevice() == RE::INPUT_DEVICE::kMouse || button->IsUp()) {
+                TranslateButtonEvent(io, button);
+            }
+        } else if (capturingBinding) {
+            continue;
         } else if (auto thumbstick = event->AsThumbstickEvent()) {
             TranslateThumbstickEvent(io, thumbstick);
         } else if (auto charEvent = event->AsCharEvent()) {

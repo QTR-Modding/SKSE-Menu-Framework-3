@@ -24,5 +24,10 @@
   "Settings.ToggleMode.Keyboard": "Toggle Mode (Keyboard):",
   "Settings.ToggleKey.Keyboard": "Toggle Key (Keyboard):",
   "Settings.ToggleMode.Gamepad": "Toggle Mode (Gamepad):",
-  "Settings.ToggleKey.Gamepad": "Toggle Key (Gamepad):"
+  "Settings.ToggleKey.Gamepad": "Toggle Key (Gamepad):",
+  "Settings.Binding.Title": "Set Binding",
+  "Settings.Binding.Keyboard": "Press and release a key. Escape cancels.",
+  "Settings.Binding.Gamepad": "Press and release a controller button. Escape cancels.",
+  "Settings.Binding.Clear": "Clear",
+  "Settings.Binding.Cancel": "Cancel"
 }

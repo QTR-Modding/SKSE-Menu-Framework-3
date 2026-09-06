@@ -359,6 +359,7 @@ inline void TranslateButtonEvent(ImGuiIO& io, const RE::ButtonEvent* button) {
 
 void UI::KeyBindingCapture::Begin(RE::INPUT_DEVICE targetDevice) {
     std::scoped_lock lock(mutex);
+    captureDevice = targetDevice;
     device = targetDevice;
     state = State::Waiting;
 }
@@ -428,8 +429,11 @@ bool UI::KeyBindingCapture::Process(RE::InputEvent* const* events) {
     return true;
 }
 
-UI::KeyBindingCapture::State UI::KeyBindingCapture::Poll(unsigned int& capturedKey) {
+UI::KeyBindingCapture::State UI::KeyBindingCapture::Poll(unsigned int& capturedKey, RE::INPUT_DEVICE displayedDevice) {
     std::scoped_lock lock(mutex);
+    if (captureDevice != displayedDevice) {
+        state = State::Idle;
+    }
     const auto result = state.load();
     if (state == State::Complete || state == State::Cancelled) {
         capturedKey = key;

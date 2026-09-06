@@ -42,11 +42,12 @@ namespace UI {
         bool IsConfirming() const;
         void Reset();
         bool Process(RE::InputEvent* const* events);
-        State Poll(unsigned int& key);
+        State Poll(unsigned int& key, RE::INPUT_DEVICE displayedDevice);
 
     private:
         std::mutex mutex;
         std::atomic<State> state{State::Idle};
+        RE::INPUT_DEVICE captureDevice = RE::INPUT_DEVICE::kNone;
         RE::INPUT_DEVICE device = RE::INPUT_DEVICE::kNone;
         unsigned int key = UnboundKey;
     };

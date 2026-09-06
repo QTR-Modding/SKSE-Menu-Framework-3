@@ -283,6 +283,30 @@ namespace {
     float g_cursorY = -1.0f;
 }
 
+void UI::UpdateActiveInputDevice(RE::InputEvent* const* events) {
+    for (auto event = *events; event; event = event->next) {
+        if (const auto button = event->AsButtonEvent()) {
+            if (!button->HasIDCode() || !button->IsDown()) {
+                continue;
+            }
+            const auto device = button->GetDevice();
+            if (device == RE::INPUT_DEVICE::kKeyboard || device == RE::INPUT_DEVICE::kMouse) {
+                activeInputDevice = RE::INPUT_DEVICE::kKeyboard;
+            } else if (device == RE::INPUT_DEVICE::kGamepad) {
+                activeInputDevice = RE::INPUT_DEVICE::kGamepad;
+            }
+        } else if (const auto mouse = event->AsMouseMoveEvent()) {
+            if (mouse->mouseInputX != 0 || mouse->mouseInputY != 0) {
+                activeInputDevice = RE::INPUT_DEVICE::kKeyboard;
+            }
+        } else if (const auto stick = event->AsThumbstickEvent()) {
+            if (std::abs(stick->xValue) > kStickDeadzone || std::abs(stick->yValue) > kStickDeadzone) {
+                activeInputDevice = RE::INPUT_DEVICE::kGamepad;
+            }
+        }
+    }
+}
+
 // The left stick mirrors the d-pad for ImGui navigation; the right stick drives
 // the cursor. Without the latter there is no controller route to any
 // pointer-driven widget (sliders, drags, window title bars), while
@@ -431,7 +455,7 @@ bool UI::KeyBindingCapture::Process(RE::InputEvent* const* events) {
 
 UI::KeyBindingCapture::State UI::KeyBindingCapture::Poll(unsigned int& capturedKey, RE::INPUT_DEVICE displayedDevice) {
     std::scoped_lock lock(mutex);
-    if (captureDevice != displayedDevice) {
+    if (captureDevice != displayedDevice && state != State::Pressed) {
         state = State::Idle;
     }
     const auto result = state.load();

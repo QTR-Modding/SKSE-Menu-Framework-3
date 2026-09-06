@@ -143,6 +143,7 @@ RE::InputEvent** RemoveNonPrintScreenInputs(RE::InputEvent** a_event) {
 
 void Hooks::ProcessInputQueueHook::thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher,
                                       RE::InputEvent* const* a_event) {
+    UI::UpdateActiveInputDevice(a_event);
     if (UI::keyBindingCapture.Process(a_event)) {
         UI::TranslateInputEvent(a_event, !UI::keyBindingCapture.IsConfirming());
         constexpr RE::InputEvent* const empty[] = {nullptr};

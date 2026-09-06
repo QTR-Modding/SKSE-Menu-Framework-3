@@ -32,6 +32,9 @@ bool IsSupportedDevice(RE::INPUT_DEVICE device);
 
 
 namespace UI {
+    inline std::atomic<RE::INPUT_DEVICE> activeInputDevice{RE::INPUT_DEVICE::kKeyboard};
+    void UpdateActiveInputDevice(RE::InputEvent* const* events);
+
     class KeyBindingCapture {
     public:
         enum class State { Idle, Waiting, Pressed, Complete, Cancelled, Confirming };

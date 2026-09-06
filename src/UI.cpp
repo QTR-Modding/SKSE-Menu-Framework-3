@@ -96,14 +96,14 @@ namespace {
         }
     }
 
-    void RenderBindingConfirmation(RE::INPUT_DEVICE device) {
+    void RenderBindingConfirmation() {
         const auto title = std::format("{}###BindingWarning", Translations::Get("Settings.Binding.Warning"));
         if (pendingToggleChange.OpenRequested) {
             ImGui::OpenPopup(title.c_str());
             pendingToggleChange.OpenRequested = false;
         }
         if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            if (!UI::keyBindingCapture.IsConfirming() || pendingToggleChange.Device != device) {
+            if (!UI::keyBindingCapture.IsConfirming()) {
                 UI::keyBindingCapture.Reset();
                 ImGui::CloseCurrentPopup();
                 ImGui::EndPopup();
@@ -948,9 +948,8 @@ void UI::RenderConfigWindow() {
             }
         }
 
-        const auto inputDevices = RE::BSInputDeviceManager::GetSingleton();
-        const bool gamepad = inputDevices && inputDevices->IsGamepadEnabled();
-        const auto device = gamepad ? RE::INPUT_DEVICE::kGamepad : RE::INPUT_DEVICE::kKeyboard;
+        const auto device = activeInputDevice.load();
+        const bool gamepad = device == RE::INPUT_DEVICE::kGamepad;
         const auto binding = gamepad ? Config::ToggleKeyGamePad : Config::ToggleKey;
         const char* toggleModeNames[] = {"SINGLEPRESS", "HOLD", "DOUBLEPRESS", "OFF"};
         int toggleMode = gamepad ? Config::ToggleModeGamePad : Config::ToggleMode;
@@ -963,7 +962,7 @@ void UI::RenderConfigWindow() {
 
         ImGui::TextUnformatted(Translations::Get("Settings.ToggleKey"));
         RenderKeyBinding("ToggleKey", binding, device);
-        RenderBindingConfirmation(device);
+        RenderBindingConfirmation();
 
         ImGui::PopItemWidth();  // ADDED: Pop the item width
         ImGui::EndGroup();      // ADDED: End the group

@@ -365,6 +365,8 @@ void UI::KeyBindingCapture::Begin(RE::INPUT_DEVICE targetDevice) {
 
 void UI::KeyBindingCapture::BeginConfirmation() {
     std::scoped_lock lock(mutex);
+    device = RE::INPUT_DEVICE::kNone;
+    key = UnboundKey;
     state = State::Confirming;
 }
 
@@ -388,7 +390,7 @@ bool UI::KeyBindingCapture::Process(RE::InputEvent* const* events) {
     if (state == State::Idle) {
         return false;
     }
-    if (state == State::Confirming) {
+    if (state == State::Cancelled) {
         return true;
     }
 
@@ -400,6 +402,19 @@ bool UI::KeyBindingCapture::Process(RE::InputEvent* const* events) {
         const auto eventDevice = button->GetDevice();
         const auto eventKey = button->GetIDCode();
         const bool cancel = eventDevice == RE::INPUT_DEVICE::kKeyboard && eventKey == REX::W32::DIK_ESCAPE;
+        if (state == State::Confirming) {
+            // Require a fresh raw press; ImGui may still have the captured B press/release queued.
+            if (cancel || (eventDevice == RE::INPUT_DEVICE::kGamepad && eventKey == RE::BSWin32GamepadDevice::Key::kB)) {
+                if (button->IsDown()) {
+                    device = eventDevice;
+                    key = eventKey;
+                } else if (eventDevice == device && eventKey == key && button->IsUp()) {
+                    state = State::Cancelled;
+                    return true;
+                }
+            }
+            continue;
+        }
         if (button->IsDown() && (cancel || (state == State::Waiting && eventDevice == device &&
                 eventKey != UnboundKey && GetKeyName(eventKey, device) != "UNKNOWN"))) {
             device = eventDevice;

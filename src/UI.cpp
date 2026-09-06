@@ -104,6 +104,7 @@ namespace {
         }
         if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             if (!UI::keyBindingCapture.IsConfirming()) {
+                UI::keyBindingCapture.Reset();
                 ImGui::CloseCurrentPopup();
                 ImGui::EndPopup();
                 return;
@@ -113,10 +114,7 @@ namespace {
             if (ImGui::IsWindowAppearing()) {
                 ImGui::NavRestoreHighlightAfterMove();
             }
-            // Ignore the captured B release that opens this warning; a fresh Back/Escape release cancels it.
-            const bool cancel = ImGui::Button(Translations::Get("Settings.Binding.Cancel")) ||
-                (!ImGui::IsWindowAppearing() &&
-                    (ImGui::IsKeyReleased(ImGuiKey_Escape) || ImGui::IsKeyReleased(ImGuiKey_GamepadFaceRight)));
+            const bool cancel = ImGui::Button(Translations::Get("Settings.Binding.Cancel"));
             ImGui::SetItemDefaultFocus();
             ImGui::SameLine();
             const bool confirm = ImGui::Button(Translations::Get("Settings.Binding.Continue"));

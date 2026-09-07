@@ -27,6 +27,7 @@ static ImGuiTreeNodeFlags base_flags =
 static int selection_mask = (1 << 2);
 
 namespace {
+    constexpr auto MAIN_WINDOW_ID = "###MCPMainWindow";
     constexpr auto FAVORITE_STAR = "\xEF\x80\x85";
     constexpr auto ARCHIVE_ICON = "\xEF\x86\x87";
     constexpr ImVec4 FAVORITE_STAR_COLOR = ImVec4(1.0f, 0.84f, 0.0f, 1.0f);
@@ -111,8 +112,8 @@ namespace {
         const ImVec2 mainWindowSize{viewport->Size.x * 0.8f, viewport->Size.y * 0.8f};
         const ImVec2 mainWindowPosition = GetCenteredWindowPosition(viewport, mainWindowSize);
         SetWindowSizeAndPosition(mainWindowSizeAndPosition, mainWindowPosition, mainWindowSize);
-        ImGui::SetWindowPos("#MCPMainWindow", mainWindowPosition, ImGuiCond_Always);
-        ImGui::SetWindowSize("#MCPMainWindow", mainWindowSize, ImGuiCond_Always);
+        ImGui::SetWindowPos(MAIN_WINDOW_ID, mainWindowPosition, ImGuiCond_Always);
+        ImGui::SetWindowSize(MAIN_WINDOW_ID, mainWindowSize, ImGuiCond_Always);
 
         const ImVec2 configWindowSize{viewport->Size.x * 0.4f, viewport->Size.y * 0.4f};
         const ImVec2 configWindowPosition = GetCenteredWindowPosition(viewport, configWindowSize);
@@ -554,7 +555,7 @@ void __stdcall UI::RenderMenuWindow() {
     window_flags |= ImGuiWindowFlags_MenuBar;
     window_flags |= ImGuiWindowFlags_NoTitleBar;
 
-    ImGui::Begin("#MCPMainWindow", nullptr, window_flags);
+    ImGui::Begin(std::format("{}{}", Translations::Get("ModControlPanel"), MAIN_WINDOW_ID).c_str(), nullptr, window_flags);
     SaveWindowSizeAndPosition(mainWindowSizeAndPosition);
 
     if (ImGui::BeginMenuBar()) {

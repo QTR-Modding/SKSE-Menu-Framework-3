@@ -600,27 +600,23 @@ void __stdcall UI::RenderMenuWindow() {
         ImGui::EndMenuBar();
     }
 
-    float filterHeight = 50.0f;
-    float headerHeight = 41.0f;
-    float headerOffsetY = 5.0f;
-
-
+    constexpr float minHeaderHeight = 50.0f;
+    const float headerHeight = std::ceil((std::max)(minHeaderHeight, ImGui::GetFrameHeight()));
 
     // Filter section
-    ImGui::BeginChild("TreeView2", ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, filterHeight), ImGuiChildFlags_None);
+    ImGui::BeginChild("TreeView2", ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, headerHeight), ImGuiChildFlags_None);
     filter.Draw("##SKSEModControlPanelMenuFilter", -FLT_MIN);
     ImGui::EndChild();
 
     ImGui::SameLine();
 
     // Header section
+    ImGui::SetNextWindowContentSize(ImVec2(0, headerHeight));
     ImGui::BeginChild("SKSEModControlPanelModMenuHeader", ImVec2(0, headerHeight), ImGuiChildFlags_None);
     if (display_node) {
-        auto windowWidth = ImGui::GetWindowSize().x;
-        auto textWidth = ImGui::CalcTextSize(display_node->Title.c_str()).x;
-        float offsetX = (windowWidth - textWidth) * 0.5f;
-        ImGui::SetCursorPosX(offsetX);
-        ImGui::SetCursorPosY(headerOffsetY);
+        const auto headerSize = ImGui::GetWindowSize();
+        const auto textSize = ImGui::CalcTextSize(display_node->Title.c_str());
+        ImGui::SetCursorPos(ImVec2((headerSize.x - textSize.x) * 0.5f, (headerSize.y - textSize.y) * 0.5f));
         ImGui::Text("%s", display_node->Title.c_str());
     }
     ImGui::EndChild();

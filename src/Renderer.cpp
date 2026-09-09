@@ -1,6 +1,7 @@
 ﻿#include "Renderer.h"
 #include "WindowManager.h"
 #include "Config.h"
+#include "GamepadNavigation.h"
 #include "UI.h"
 #include "imgui.h"
 #include "Input.h"
@@ -26,6 +27,9 @@ bool UI::Renderer::ProcessOpenClose(RE::InputEvent* const* evns) {
         const RE::ButtonEvent* a_event = e->AsButtonEvent();
         const auto temp_device = a_event->GetDevice();
         if (!IsSupportedDevice(temp_device)) continue;
+        if (a_event->IsPressed()) {
+            UI::GamepadNavigation::NotifyInputDevice(temp_device);
+        }
         const auto temp_toggleKey = temp_device == RE::INPUT_DEVICE::kKeyboard ? Config::ToggleKey : Config::ToggleKeyGamePad;
         const auto temp_toggleMode =
             temp_device == RE::INPUT_DEVICE::kKeyboard ? Config::ToggleMode : Config::ToggleModeGamePad;

@@ -10788,6 +10788,13 @@ void ImGuiStackSizes::CompareWithContextState(ImGuiContext* ctx)
 // - ItemAdd()
 //-----------------------------------------------------------------------------
 
+static ImGui::ImGuiItemAddObserver GItemAddObserver = NULL;
+
+void ImGui::SetItemAddObserver(ImGuiItemAddObserver observer)
+{
+    GItemAddObserver = observer;
+}
+
 // Code not using ItemAdd() may need to call this manually otherwise ActiveId will be cleared. In IMGUI_VERSION_NUM < 18717 this was called by GetID().
 void ImGui::KeepAliveID(ImGuiID id)
 {
@@ -10816,6 +10823,9 @@ bool ImGui::ItemAdd(const ImRect& bb, ImGuiID id, const ImRect* nav_bb_arg, ImGu
     g.LastItemData.InFlags = g.CurrentItemFlags | g.NextItemData.ItemFlags | extra_flags;
     g.LastItemData.StatusFlags = ImGuiItemStatusFlags_None;
     // Note: we don't copy 'g.NextItemData.SelectionUserData' to an hypothetical g.LastItemData.SelectionUserData: since the former is not cleared.
+
+    if (id != 0 && GItemAddObserver != NULL)
+        GItemAddObserver(&g, window, &g.LastItemData);
 
     if (id != 0)
     {

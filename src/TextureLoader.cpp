@@ -3,6 +3,8 @@
 
 
 #include <codecvt>
+#include <cstdint>
+#include <format>
 #include <locale>
 #include <string>
 #include <vector>
@@ -120,9 +122,13 @@ ID3D11ShaderResourceView* TextureLoader::TextureLoaderImpl::LoadTextureFromDDSFi
         return NULL;
     }
 
-    ID3D11ShaderResourceView* texture;
-
-    DirectX::CreateDDSTextureFromFile(device, context, wpath, nullptr, &texture);
+    ID3D11ShaderResourceView* texture = nullptr;
+    const HRESULT result = DirectX::CreateDDSTextureFromFile(device, context, wpath, nullptr, &texture);
+    if (FAILED(result)) {
+        logger::warn("Could not load DDS texture '{}' (HRESULT: 0x{:08X})", path,
+                     static_cast<std::uint32_t>(result));
+        return nullptr;
+    }
 
     return texture;
 }
@@ -135,8 +141,13 @@ ID3D11ShaderResourceView* TextureLoader::TextureLoaderImpl::LoadTextureFromWICFi
         return NULL;
     }
 
-    ID3D11ShaderResourceView* texture;
-    DirectX::CreateWICTextureFromFile(device, context, wpath, nullptr, &texture);
+    ID3D11ShaderResourceView* texture = nullptr;
+    const HRESULT result = DirectX::CreateWICTextureFromFile(device, context, wpath, nullptr, &texture);
+    if (FAILED(result)) {
+        logger::warn("Could not load WIC texture '{}' (HRESULT: 0x{:08X})", path,
+                     static_cast<std::uint32_t>(result));
+        return nullptr;
+    }
 
     return texture;
 }

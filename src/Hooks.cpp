@@ -21,6 +21,18 @@ namespace {
     ImGuiVRHelperPluginAPI::Client g_vrHelper;
     HWND g_outputWindow = nullptr;
 
+    void SyncImGuiGamepadAvailability() {
+        ImGuiIO& io = ImGui::GetIO();
+        RE::BSInputDeviceManager* inputDeviceManager = RE::BSInputDeviceManager::GetSingleton();
+        const bool gamepadAvailable = inputDeviceManager && inputDeviceManager->IsGamepadEnabled();
+
+        if (gamepadAvailable) {
+            io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+        } else {
+            io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;
+        }
+    }
+
     bool CenterMouseCursorInWindow() {
         if (!g_outputWindow) {
             return false;
@@ -276,6 +288,10 @@ void Render() {
 
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
+    // The Win32 backend only refreshes its XInput capability after receiving
+    // WM_DEVICECHANGE. Skyrim owns the window procedure and may not forward
+    // that message, so use the game's live device state for hot-plug support.
+    SyncImGuiGamepadAvailability();
     // When connected, size to the helper's panel canvas so wand UV and our own
     // layout share one coordinate space, instead of the flat mirror's resolution.
     if (!g_vrHelper.IsConnected() || !g_vrHelper.ApplyPanelDisplaySize()) {

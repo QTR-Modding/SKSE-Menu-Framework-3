@@ -1,6 +1,6 @@
 {
   "ModControlPanel": "Mod Control Panel",
-  "Options": "Options (X) \uf0d7",
+  "Options": "Options \uf0d7",
   "Options.ResumeGame": "Resume Game",
   "Options.OpenSettings": "Open Settings",
   "Options.RestoreArchivedMenus": "Restore Archived Menus",
@@ -13,6 +13,15 @@
   "Menu.Archive.Confirm": "Are you sure you want to archive this menu?",
   "Menu.Archive.Yes": "Archive",
   "Menu.Archive.No": "Cancel",
+
+  "Gamepad.Navigate": "Navigate",
+  "Gamepad.Adjust": "Adjust",
+  "Gamepad.Select": "Select",
+  "Gamepad.Options": "Options",
+  "Gamepad.Controls": "Controls",
+  "Gamepad.Scroll": "Scroll",
+  "Gamepad.Back": "Back",
+  "Gamepad.ImGuiIconsMissing": "ImGui Icons is required for controller prompts.",
 
   "Settings.Title": "Settings",
   "Settings.MenuStyle": "Menu Style:",

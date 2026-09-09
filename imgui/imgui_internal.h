@@ -3246,6 +3246,12 @@ struct ImGuiTableSettings
 
 namespace ImGui
 {
+    // Optional observer for integrations which need to inspect submitted items
+    // without changing widget implementations. The observer must not mutate
+    // ImGui state and is called only for items with a non-zero ID.
+    typedef void (*ImGuiItemAddObserver)(ImGuiContext* context, ImGuiWindow* window, const ImGuiLastItemData* item_data);
+    IMGUI_API void          SetItemAddObserver(ImGuiItemAddObserver observer);
+
     // Windows
     // We should always have a CurrentWindow in the stack (there is an implicit "Debug" window)
     // If this ever crashes because g.CurrentWindow is NULL, it means that either:

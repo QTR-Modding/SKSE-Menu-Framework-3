@@ -17,6 +17,8 @@ namespace UI::GamepadNavigation {
     namespace {
         constexpr std::size_t kAreaCount = static_cast<std::size_t>(Area::Count);
         constexpr float kScrollSpeed = 900.0f;
+        constexpr float kNavigationRepeatDelay = 0.40f;
+        constexpr float kNavigationRepeatRate = 0.14f;
 
         struct NavigableItem {
             ImGuiID Id = 0;
@@ -24,6 +26,11 @@ namespace UI::GamepadNavigation {
             ImGuiID FocusScopeId = 0;
             ImGuiNavLayer Layer = ImGuiNavLayer_Main;
             ImRect Rect{};
+        };
+
+        struct ItemRow {
+            std::size_t First = 0;
+            std::size_t Last = 0;
         };
 
         enum class IconSlot { Up, Down, Left, Right, Confirm, Cancel, Options, RightShoulder, RightStick, Count };
@@ -131,8 +138,22 @@ namespace UI::GamepadNavigation {
             }
         }
 
-        bool IsPressed(ImGuiKey dpadKey, ImGuiKey stickKey) {
-            return ImGui::IsKeyPressed(dpadKey, true) || ImGui::IsKeyPressed(stickKey, true);
+        bool IsPressedWithNavigationRepeat(ImGuiKey key) {
+            if (ImGui::IsKeyPressed(key, false)) {
+                return true;
+            }
+
+            const ImGuiKeyData* keyData = ImGui::GetKeyData(key);
+            return keyData->Down && ImGui::CalcTypematicRepeatAmount(keyData->DownDurationPrev, keyData->DownDuration,
+                                                                     kNavigationRepeatDelay, kNavigationRepeatRate) > 0;
+        }
+
+        bool IsDirectionPressed(ImGuiKey dpadKey, ImGuiKey stickKey) {
+            return IsPressedWithNavigationRepeat(dpadKey) || IsPressedWithNavigationRepeat(stickKey);
+        }
+
+        bool IsDirectionDown(ImGuiKey dpadKey, ImGuiKey stickKey) {
+            return ImGui::IsKeyDown(dpadKey) || ImGui::IsKeyDown(stickKey);
         }
 
         bool IsPopupBlockingAreaNavigation() {
@@ -188,6 +209,33 @@ namespace UI::GamepadNavigation {
             return std::nullopt;
         }
 
+        std::size_t GetFocusedIndex(Area area, const std::vector<NavigableItem>& items) {
+            const std::optional<std::size_t> focusedItem = FindFocusedItem(items);
+            return focusedItem.value_or(std::min(focusedIndices[AreaIndex(area)], items.size() - 1));
+        }
+
+        bool ItemsShareRow(const NavigableItem& first, const NavigableItem& second) {
+            if (first.Window != second.Window) {
+                return false;
+            }
+
+            const float overlap =
+                std::min(first.Rect.Max.y, second.Rect.Max.y) - std::max(first.Rect.Min.y, second.Rect.Min.y);
+            const float smallerHeight = std::min(first.Rect.GetHeight(), second.Rect.GetHeight());
+            return overlap >= smallerHeight * 0.5f;
+        }
+
+        ItemRow FindItemRow(const std::vector<NavigableItem>& items, std::size_t index) {
+            ItemRow row{index, index};
+            while (row.First > 0 && ItemsShareRow(items[index], items[row.First - 1])) {
+                --row.First;
+            }
+            while (row.Last + 1 < items.size() && ItemsShareRow(items[index], items[row.Last + 1])) {
+                ++row.Last;
+            }
+            return row;
+        }
+
         void MoveSequentially(Area area, int direction) {
             const std::size_t areaIndex = AreaIndex(area);
             const auto& items = previousItems[areaIndex];
@@ -196,8 +244,7 @@ namespace UI::GamepadNavigation {
                 return;
             }
 
-            const auto focusedItem = FindFocusedItem(items);
-            std::size_t index = focusedItem.value_or(std::min(focusedIndices[areaIndex], items.size() - 1));
+            std::size_t index = GetFocusedIndex(area, items);
             if (direction < 0) {
                 index = index == 0 ? items.size() - 1 : index - 1;
             } else {
@@ -208,19 +255,85 @@ namespace UI::GamepadNavigation {
             FocusItem(items[index]);
         }
 
+        void MoveVertically(Area area, int direction) {
+            const std::size_t areaIndex = AreaIndex(area);
+            const auto& items = previousItems[areaIndex];
+            if (items.empty()) {
+                requestedFocus = area;
+                return;
+            }
+
+            const std::size_t currentIndex = GetFocusedIndex(area, items);
+            const ItemRow currentRow = FindItemRow(items, currentIndex);
+            const std::size_t adjacentIndex = direction < 0
+                                                  ? (currentRow.First == 0 ? items.size() - 1 : currentRow.First - 1)
+                                                  : (currentRow.Last + 1 == items.size() ? 0 : currentRow.Last + 1);
+            const std::size_t targetIndex = FindItemRow(items, adjacentIndex).First;
+
+            focusedIndices[areaIndex] = targetIndex;
+            FocusItem(items[targetIndex]);
+        }
+
+        bool HasHorizontalTargets(Area area) {
+            const auto& items = previousItems[AreaIndex(area)];
+            if (items.empty()) {
+                return false;
+            }
+
+            const std::size_t currentIndex = GetFocusedIndex(area, items);
+            const ItemRow row = FindItemRow(items, currentIndex);
+            return row.First != row.Last;
+        }
+
+        void MoveHorizontally(Area area, int direction) {
+            const std::size_t areaIndex = AreaIndex(area);
+            const auto& items = previousItems[areaIndex];
+            const std::size_t currentIndex = GetFocusedIndex(area, items);
+            const ItemRow row = FindItemRow(items, currentIndex);
+            const std::size_t targetIndex = direction < 0 ? (currentIndex == row.First ? row.Last : currentIndex - 1)
+                                                          : (currentIndex == row.Last ? row.First : currentIndex + 1);
+
+            focusedIndices[areaIndex] = targetIndex;
+            FocusItem(items[targetIndex]);
+        }
+
         void ProcessAreaInput(Area area) {
             if (activeArea != area || IsPopupBlockingAreaNavigation(area) || ImGui::IsAnyItemActive()) {
                 return;
             }
 
-            const bool previous = IsPressed(ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp);
-            const bool next = IsPressed(ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown);
-            if (previous == next) {
+            const bool previousDown = IsDirectionDown(ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp);
+            const bool nextDown = IsDirectionDown(ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown);
+            if (previousDown || nextDown) {
+                CancelDefaultMoveRequest();
+            }
+
+            const bool previous = IsDirectionPressed(ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp);
+            const bool next = IsDirectionPressed(ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown);
+            if (previous != next) {
+                if (area == Area::PageTree) {
+                    MoveVertically(area, previous ? -1 : 1);
+                } else {
+                    MoveSequentially(area, previous ? -1 : 1);
+                }
                 return;
             }
 
-            CancelDefaultMoveRequest();
-            MoveSequentially(area, previous ? -1 : 1);
+            if (previousDown || nextDown || area != Area::PageTree || !HasHorizontalTargets(area)) {
+                return;
+            }
+
+            const bool leftDown = IsDirectionDown(ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft);
+            const bool rightDown = IsDirectionDown(ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight);
+            if (leftDown || rightDown) {
+                CancelDefaultMoveRequest();
+            }
+
+            const bool left = IsDirectionPressed(ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft);
+            const bool right = IsDirectionPressed(ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight);
+            if (left != right) {
+                MoveHorizontally(area, left ? -1 : 1);
+            }
         }
 
         void ScrollArea(Area area) {
@@ -341,6 +454,9 @@ namespace UI::GamepadNavigation {
                         {IconSlot::Confirm, noSecondaryIcon, "Gamepad.Select"},
                         {IconSlot::Options, noSecondaryIcon, "Gamepad.Options"},
                     };
+                    if (HasHorizontalTargets(Area::PageTree)) {
+                        hints.insert(hints.begin() + 1, Hint{IconSlot::Left, IconSlot::Right, "Gamepad.Actions"});
+                    }
                     if (hasPage) {
                         hints.push_back({IconSlot::RightShoulder, noSecondaryIcon, "Gamepad.Controls"});
                     }

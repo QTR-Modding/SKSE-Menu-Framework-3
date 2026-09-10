@@ -349,10 +349,6 @@ namespace {
         ImGui::PushID(menuName.c_str());
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-        const bool suppressGamepadNavigation = UI::GamepadNavigation::IsActive();
-        if (suppressGamepadNavigation) {
-            ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
-        }
 
         ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize * 2.0f, headerMin.y));
         ImGui::PushStyleColor(
@@ -371,9 +367,6 @@ namespace {
         }
         RenderTooltip("Menu.Archive");
 
-        if (suppressGamepadNavigation) {
-            ImGui::PopItemFlag();
-        }
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
         ImGui::PopID();

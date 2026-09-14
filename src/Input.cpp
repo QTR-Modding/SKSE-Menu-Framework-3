@@ -2,6 +2,7 @@
 #include "Config.h"
 #include "Application.h"
 #include "WindowManager.h"
+#include "GamepadNavigation.h"
 #include "imgui.h"
 
 #include <algorithm>
@@ -313,6 +314,9 @@ void UI::UpdateActiveInputDevice(RE::InputEvent* const* events) {
 // io.MouseDrawCursor is on.
 inline void TranslateThumbstickEvent(ImGuiIO& io, const RE::ThumbstickEvent* stick) {
     if (stick->IsLeft()) {
+        if (std::abs(stick->xValue) > kStickDeadzone || std::abs(stick->yValue) > kStickDeadzone) {
+            UI::GamepadNavigation::NotifyGamepadAnalogInput();
+        }
         io.AddKeyEvent(ImGuiKey_GamepadLStickLeft, stick->xValue < -kStickDeadzone);
         io.AddKeyEvent(ImGuiKey_GamepadLStickRight, stick->xValue > kStickDeadzone);
         io.AddKeyEvent(ImGuiKey_GamepadLStickUp, stick->yValue > kStickDeadzone);
@@ -326,9 +330,14 @@ inline void TranslateThumbstickEvent(ImGuiIO& io, const RE::ThumbstickEvent* sti
 
     const float x = std::abs(stick->xValue) > kStickDeadzone ? stick->xValue : 0.0f;
     const float y = std::abs(stick->yValue) > kStickDeadzone ? stick->yValue : 0.0f;
+    io.AddKeyEvent(ImGuiKey_GamepadRStickLeft, x < 0.0f);
+    io.AddKeyEvent(ImGuiKey_GamepadRStickRight, x > 0.0f);
+    io.AddKeyEvent(ImGuiKey_GamepadRStickUp, y > 0.0f);
+    io.AddKeyEvent(ImGuiKey_GamepadRStickDown, y < 0.0f);
     if (x == 0.0f && y == 0.0f) {
         return;
     }
+    UI::GamepadNavigation::NotifyGamepadAnalogInput();
 
     if (g_cursorX < 0.0f || g_cursorY < 0.0f) {
         const bool hasCursor = io.MousePos.x > -FLT_MAX && io.MousePos.y > -FLT_MAX;
@@ -345,6 +354,9 @@ inline void TranslateThumbstickEvent(ImGuiIO& io, const RE::ThumbstickEvent* sti
 inline void TranslateButtonEvent(ImGuiIO& io, const RE::ButtonEvent* button) {
     if (!button->HasIDCode()) {
         return;
+    }
+    if (button->IsPressed()) {
+        UI::GamepadNavigation::NotifyInputDevice(button->GetDevice());
     }
 
     switch (button->GetDevice()) {
@@ -480,6 +492,7 @@ void UI::TranslateInputEvent(RE::InputEvent* const* a_event, bool capturingBindi
         } else if (auto thumbstick = event->AsThumbstickEvent()) {
             TranslateThumbstickEvent(io, thumbstick);
         } else if (auto charEvent = event->AsCharEvent()) {
+            GamepadNavigation::NotifyInputDevice(RE::INPUT_DEVICE::kKeyboard);
             io.AddInputCharacter(charEvent->keyCode);
         }
     }

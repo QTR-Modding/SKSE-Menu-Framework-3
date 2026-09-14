@@ -1,5 +1,6 @@
 #include "UI.h"
 #include "WindowManager.h"
+#include "GamepadNavigation.h"
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -382,6 +383,7 @@ namespace {
 
         if (ContainsNode(location.Node, display_node)) {
             display_node = nullptr;
+            UI::GamepadNavigation::NotifyPageClosed();
         }
         if (ContainsNode(location.Node, pendingArchiveMenu)) {
             pendingArchiveMenuName.clear();
@@ -439,6 +441,7 @@ namespace {
         RootMenuConfig::SetArchived(menuName, archived);
         if (archived && ContainsNode(menu, display_node)) {
             display_node = nullptr;
+            UI::GamepadNavigation::NotifyPageClosed();
         }
     }
 
@@ -560,14 +563,18 @@ void RenderNode(std::pair<const std::string, UI::MenuTree*>& node) {
     bool node_open = ImGui::TreeNodeEx(node.second, node_flags, "%s", node.first.c_str());
 
 
-    bool itemClicked = ImGui::IsItemClicked();
-    bool itemToggledOpen = ImGui::IsItemToggledOpen();
-    bool gamepadButtonPressed = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown);  // Typically A button
-    bool itemIsFocused = ImGui::IsItemFocused();  // Check if the item is focused/highlighted by gamepad navigation
+    const bool itemClicked = ImGui::IsItemClicked();
+    const bool itemToggledOpen = ImGui::IsItemToggledOpen();
+    const bool gamepadButtonPressed = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown);
+    const bool itemIsFocused = ImGui::IsItemFocused();
+    const bool activatedByGamepad = gamepadButtonPressed && itemIsFocused;
 
-    if ((itemClicked || (gamepadButtonPressed && itemIsFocused)) && !itemToggledOpen) {
+    if ((itemClicked || activatedByGamepad) && !itemToggledOpen) {
         if (node.second->Render) {
             display_node = node.second;
+            if (activatedByGamepad) {
+                UI::GamepadNavigation::RequestFocus(UI::GamepadNavigation::Area::PageContent);
+            }
         }
     }
     if (node_open && node.second->Children.size() != 0) {
@@ -669,23 +676,42 @@ void __stdcall UI::RenderMenuWindow() {
 
     ImGui::Begin("#MCPMainWindow", nullptr, window_flags);
     SaveWindowSizeAndPosition(mainWindowSizeAndPosition);
+    GamepadNavigation::BeginFrame(display_node != nullptr, WindowManager::ConfigInterface->IsOpen.load());
+    GamepadNavigation::PushFocusStyle();
 
     if (ImGui::BeginMenuBar()) {
         PushSolid();
-        if (ImGui::BeginMenu(Translations::Get("Options"))) {
-            if (ImGui::MenuItem(Translations::Get("Settings.ResetWindows"))) {
-                ResetBuiltInWindowSizeAndPosition(viewport);
+        const char* optionsLabel = Translations::Get("Options");
+        const bool optionsWasOpen = ImGui::IsPopupOpen(optionsLabel);
+        const bool toggleOptions = GamepadNavigation::IsOptionsToggleRequested();
+        if (toggleOptions && !optionsWasOpen) {
+            ImGui::OpenPopup(optionsLabel);
+        }
+
+        if (ImGui::BeginMenu(optionsLabel)) {
+            GamepadNavigation::BeginOptionsMenu();
+            const bool closeOptions = toggleOptions && optionsWasOpen;
+            if (closeOptions) {
+                ImGui::CloseCurrentPopup();
+                GamepadNavigation::NotifyOptionsMenuClosed();
             }
 
-            if (ImGui::MenuItem(Translations::Get("Options.ResumeGame"))) {
-                WindowManager::MainInterface->BlockUserInput = false;
-                WindowManager::ConfigInterface->BlockUserInput = false;
+            if (!closeOptions) {
+                if (ImGui::MenuItem(Translations::Get("Settings.ResetWindows"))) {
+                    ResetBuiltInWindowSizeAndPosition(viewport);
+                }
+
+                if (ImGui::MenuItem(Translations::Get("Options.ResumeGame"))) {
+                    WindowManager::MainInterface->BlockUserInput = false;
+                    WindowManager::ConfigInterface->BlockUserInput = false;
+                }
+                if (ImGui::MenuItem(Translations::Get("Options.OpenSettings"))) {
+                    WindowManager::ConfigInterface->IsOpen = true;
+                }
+                ImGui::Separator();
+                RenderArchivedMenuRecovery();
             }
-            if (ImGui::MenuItem(Translations::Get("Options.OpenSettings"))) {
-                WindowManager::ConfigInterface->IsOpen = true;
-            }
-            ImGui::Separator();
-            RenderArchivedMenuRecovery();
+            GamepadNavigation::EndArea();
             ImGui::EndMenu();
         }
         Pop();
@@ -739,8 +765,13 @@ void __stdcall UI::RenderMenuWindow() {
     ImGui::EndChild();
 
     // Tree view section
-    ImGui::BeginChild("SKSEModControlPanelTreeView", ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, -FLT_MIN),
+    const float hintBarHeight = GamepadNavigation::GetHintBarHeight();
+    const float contentHeight =
+        hintBarHeight > 0.0f ? -(hintBarHeight + ImGui::GetStyle().ItemSpacing.y) : -FLT_MIN;
+    ImGui::BeginChild("SKSEModControlPanelTreeView",
+                      ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, contentHeight),
                       ImGuiChildFlags_Border);
+    GamepadNavigation::BeginArea(GamepadNavigation::Area::PageTree);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 5.0f));
     std::vector<const std::pair<const std::string, UI::MenuTree*>*> rootMenus;
     rootMenus.reserve(RootMenu->Children.size());
@@ -790,18 +821,27 @@ void __stdcall UI::RenderMenuWindow() {
         }
     }
     ImGui::PopStyleVar();
+    GamepadNavigation::EndArea();
     ImGui::EndChild();
 
     ImGui::SameLine();
 
     // Content section
-    ImGui::BeginChild("SKSEModControlPanelMenuNode", ImVec2(0, -FLT_MIN), ImGuiChildFlags_Border);
+    ImGui::BeginChild("SKSEModControlPanelMenuNode", ImVec2(0, contentHeight), ImGuiChildFlags_Border);
+    GamepadNavigation::BeginArea(GamepadNavigation::Area::PageContent);
     if (display_node) {
         display_node->Render();
     }
+    GamepadNavigation::EndArea();
     ImGui::EndChild();
 
+    GamepadNavigation::RenderHintBar(display_node != nullptr);
+
     RenderArchiveConfirmation();
+
+    GamepadNavigation::RenderFocusedItemHighlight();
+    GamepadNavigation::PopFocusStyle();
+    GamepadNavigation::EndFrame();
 
     ImGui::End();
 }
@@ -817,6 +857,7 @@ UI::BackAction UI::ResolveBack() {
     // A page is showing: back means return to the tree, not leave the menu.
     if (display_node) {
         display_node = nullptr;
+        GamepadNavigation::NotifyPageClosed();
         return BackAction::PoppedPage;
     }
 

@@ -4,6 +4,10 @@ The header file has a license that does not require mods using it as a library t
 
 https://github.com/QTR-Modding/SKSE-Menu-Framework-3-API
 
+## Requirements
+
+- [ImGui Icons](https://www.nexusmods.com/skyrimspecialedition/mods/114790) is required for the Mod Control Panel's gamepad button prompts. Its shared artwork may be replaced by compatible ImGui Icons style patches.
+
 # Updating
 
 Mods using the old header should be fully compatible; however, if you want to use the new features, you need to update the [header file](https://github.com/QTR-Modding/SKSE-Menu-Framework-3/blob/master/resources/SKSEMenuFramework.h)

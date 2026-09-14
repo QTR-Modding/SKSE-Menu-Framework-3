@@ -13,7 +13,9 @@ enum Font {
 
 struct FontContainer {
     ImFont* defaultFont = nullptr;
+    std::string defaultFontName;
     std::map<std::string, ImFont*> fonts;
+    std::vector<std::string> textFontNames;
 };
 
 class FontManager {

@@ -85,6 +85,9 @@ namespace {
 
         container.fonts[NormalizeFontName(path.filename().string())] = font;
         container.fonts[NormalizeFontName(path.stem().string())] = font;
+        if (!IsFontAwesome(path.filename().string())) {
+            container.textFontNames.push_back(path.filename().string());
+        }
     }
 }
 
@@ -145,13 +148,12 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
     }
 
     const auto primaryName = NormalizeFontName(Config::PrimaryFont);
-    std::string baseFontName;
     auto primary = std::ranges::find_if(fontFiles, [&](const auto& path) {
         return NormalizeFontName(path.filename().string()) == primaryName;
     });
     if (primary != fontFiles.end()) {
-        baseFontName = primary->filename().string();
-        result.defaultFont = GetFont(io, baseFontName, GetFontSize(*primary, size), &font_config,
+        result.defaultFontName = primary->filename().string();
+        result.defaultFont = GetFont(io, result.defaultFontName, GetFontSize(*primary, size), &font_config,
             persistentGlyphRanges.at(size).Data);
         RegisterFont(result, *primary, result.defaultFont);
     }
@@ -159,8 +161,8 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
     // rollback mechanism
     if (!result.defaultFont) {
         SKSE::log::warn("Primary font '{}' failed to load. Falling back to SkyrimMenuFont.ttf.", Config::PrimaryFont);
-        baseFontName = "SkyrimMenuFont.ttf";
-        result.defaultFont = GetFont(io, "SkyrimMenuFont.ttf", GetFontSize("SkyrimMenuFont.ttf", size), nullptr,
+        result.defaultFontName = "SkyrimMenuFont.ttf";
+        result.defaultFont = GetFont(io, result.defaultFontName, GetFontSize("SkyrimMenuFont.ttf", size), nullptr,
             io.Fonts->GetGlyphRangesDefault());
         RegisterFont(result, "SkyrimMenuFont.ttf", result.defaultFont);
     }
@@ -195,7 +197,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
             // Icon fonts do not contain ordinary text. Start a new composite
             // face with the primary text font, then merge only this icon style.
             const auto configuredSize = GetFontSize(path, size);
-            font = GetFont(io, baseFontName, configuredSize, &font_config, persistentGlyphRanges.at(size).Data);
+            font = GetFont(io, result.defaultFontName, configuredSize, &font_config, persistentGlyphRanges.at(size).Data);
             if (font) {
                 ImFontConfig namedMergeConfig;
                 namedMergeConfig.MergeMode = true;
@@ -215,6 +217,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         }
     }
 
+    std::ranges::sort(result.textFontNames);
     SKSE::log::info("Font loading process for size {} completed.", size);
     return result;
 }

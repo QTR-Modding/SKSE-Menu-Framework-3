@@ -24,3 +24,11 @@ JPEXS Free Flash Decompiler by Jindra Petřík and contributors
 https://github.com/jindrapetrik/jpexs-decompiler
 Relevant components: DefineFont3 parser, FontExporter, Fontastic, and DoubleType
 Licenses: GNU GPL v3 or later, GNU LGPL v3 or later, and GNU LGPL v2.1 or later
+
+Font Awesome Free
+Copyright (c) 2026 Fonticons, Inc. (https://fontawesome.com)
+
+Licensed under the SIL Open Font License, Version 1.1.
+Reserved Font Name: "Font Awesome".
+
+See the included SIL Open Font License 1.1 for the full license terms.

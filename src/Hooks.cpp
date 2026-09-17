@@ -61,6 +61,7 @@ namespace {
 }
 
 void Hooks::Install() {
+    SKSE::AllocTrampoline(14*4);
     D3DInitHook::install();
     RenderUIHook::install();
     ProcessInputQueueHook::install();
@@ -86,17 +87,14 @@ void Hooks::ConnectVRHelper() {
 }
 
 void Hooks::D3DInitHook::install() {
-    SKSE::AllocTrampoline(14);
     auto& trampoline = SKSE::GetTrampoline();
     originalFunction = trampoline.write_call<5>(
         REL::RelocationID(75595, 77226, 75595).address() + REL::Relocate(0x9, 0x275, 0x9), thunk);
 }
 
 void Hooks::RenderUIHook::install() {
-    SKSE::AllocTrampoline(14);
     auto& trampoline = SKSE::GetTrampoline();
     originalFunction1 = trampoline.write_call<5>(REL::RelocationID(35556, 36555, 35556).address() + REL::Relocate(0x3ab, 0x371, 0x355), thunk1);
-    SKSE::AllocTrampoline(14);
 
     const auto version = REL::Module::get().version();
     const auto is_version_1_7 = version.major() == 1 && version.minor() == 7;
@@ -107,7 +105,6 @@ void Hooks::RenderUIHook::install() {
 }
 
 void Hooks::ProcessInputQueueHook::install() {
-    SKSE::AllocTrampoline(14);
     auto& trampoline = SKSE::GetTrampoline();
     originalFunction = trampoline.write_call<5>(
         REL::RelocationID(67315, 68617, 67315).address() + REL::Relocate(0x7B, 0x7B, 0x81), thunk);

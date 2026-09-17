@@ -1,33 +1,62 @@
 #include "Translations.h"
 
 #include <nlohmann/json.hpp>
-using json = nlohmann::json;
+namespace {
+    constexpr auto TRANSLATIONS_PATH = "Data/SKSE/Plugins/SKSEMenuFrameworkStrings.json";
+    constexpr auto ENGLISH_TRANSLATIONS_PATH = "Data/SKSE/Plugins/SKSEMenuFrameworkStrings_EN.json";
+    constexpr auto MISSING_TRANSLATION = "missing translation";
 
-namespace Translations {
-    constexpr const char* translationsFolder = "Data/SKSE/Plugins/SKSEMenuFrameworkStrings.json";
-    const char* defaultTranslation = "missing translation";
-    static inline std::map<std::string, const char*> translations;
+    using TranslationMap = std::map<std::string, std::string>;
+
+    TranslationMap translations;
+    TranslationMap englishTranslations;
+
+    void LoadTranslations(const char* path, TranslationMap& destination) {
+        destination.clear();
+
+        std::ifstream file(path);
+        if (!file.good()) {
+            logger::error("Could not open translation file '{}'.", path);
+            return;
+        }
+
+        try {
+            const auto document = nlohmann::json::parse(file);
+            if (!document.is_object()) {
+                logger::warn("Translation file '{}' must contain a JSON object.", path);
+                return;
+            }
+
+            for (const auto& [key, value] : document.items()) {
+                if (!value.is_string()) {
+                    logger::warn("Translation '{}' in '{}' must be a string.", key, path);
+                    continue;
+                }
+
+                destination.emplace(key, value.get<std::string>());
+            }
+        } catch (const std::exception& exception) {
+            logger::error("Could not read translation file '{}': {}", path, exception.what());
+        }
+    }
 }
 
 
 void Translations::Install() {
-    std::ifstream file(translationsFolder);
-    nlohmann::json j;
-    file >> j;
-    logger::trace("reading translation");
-    if (!j.is_object()) {
-        logger::trace("translation json: {} must be an object", translationsFolder);
-    }
-    for (auto& [key, value] : j.items()) {
-        logger::trace("{} -> {}", key, value.dump());
-        std::string v = value;
-        translations[key] = strdup(v.c_str());
-    }
+    LoadTranslations(ENGLISH_TRANSLATIONS_PATH, englishTranslations);
+    LoadTranslations(TRANSLATIONS_PATH, translations);
 }
 
-const const char* Translations::Get(std::string key) {
-    IF_FIND(translations, key, it) {
-        return it->second;
+const char* Translations::Get(std::string key) {
+    if (const auto translation = translations.find(key); translation != translations.end()) {
+        return translation->second.c_str();
     }
-    return defaultTranslation;
+
+    if (const auto englishTranslation = englishTranslations.find(key);
+        englishTranslation != englishTranslations.end()) {
+        return englishTranslation->second.c_str();
+    }
+
+    logger::warn("Missing translation '{}'.", key);
+    return MISSING_TRANSLATION;
 }

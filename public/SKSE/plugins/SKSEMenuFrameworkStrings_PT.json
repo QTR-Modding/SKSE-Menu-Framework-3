@@ -32,6 +32,8 @@
   "Settings.Font": "Fonte:",
   "Settings.FontSize": "Tamanho da Fonte",
   "Settings.FontSize.Apply": "Aplicar Tamanho da Fonte",
+  "Settings.Toggle.Keyboard": "Acionamento por Teclado",
+  "Settings.Toggle.Gamepad": "Acionamento por Controle",
   "Settings.ToggleMode": "Modo de Acionamento:",
   "Settings.ToggleKey": "Tecla de Acionamento:",
   "Settings.Binding.Title": "Definir Tecla",

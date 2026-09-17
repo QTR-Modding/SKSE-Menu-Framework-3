@@ -32,6 +32,8 @@
   "Settings.Font": "Font:",
   "Settings.FontSize": "Font Size",
   "Settings.FontSize.Apply": "Apply Font Size",
+  "Settings.Toggle.Keyboard": "Keyboard Toggle",
+  "Settings.Toggle.Gamepad": "Gamepad Toggle",
   "Settings.ToggleMode": "Toggle Mode:",
   "Settings.ToggleKey": "Toggle Key:",
   "Settings.Binding.Title": "Set Binding",

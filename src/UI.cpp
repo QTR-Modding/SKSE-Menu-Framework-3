@@ -170,6 +170,27 @@ namespace {
         ImGui::PopID();
     }
 
+    void RenderToggleSettings(const char* id, RE::INPUT_DEVICE device) {
+        const bool keyboard = device == RE::INPUT_DEVICE::kKeyboard;
+        const auto binding = keyboard ? Config::ToggleKey : Config::ToggleKeyGamePad;
+        const char* toggleModeNames[] = {"SINGLEPRESS", "HOLD", "DOUBLEPRESS", "OFF"};
+        int toggleMode = keyboard ? Config::ToggleMode : Config::ToggleModeGamePad;
+
+        ImGui::PushID(id);
+        ImGui::TextUnformatted(Translations::Get(
+            keyboard ? "Settings.Toggle.Keyboard" : "Settings.Toggle.Gamepad"));
+        ImGui::Separator();
+
+        ImGui::TextUnformatted(Translations::Get("Settings.ToggleMode"));
+        if (ImGui::Combo("##ToggleModeCombo", &toggleMode, toggleModeNames, IM_ARRAYSIZE(toggleModeNames))) {
+            RequestToggleChange(device, binding, static_cast<std::uint8_t>(toggleMode));
+        }
+
+        ImGui::TextUnformatted(Translations::Get("Settings.ToggleKey"));
+        RenderKeyBinding("ToggleKey", binding, device);
+        ImGui::PopID();
+    }
+
     void ApplyWindowSizeAndPosition(WindowSizeAndPosition& sizeAndPosition, const ImVec2& defaultPosition, const ImVec2& defaultSize,
                              const ImVec2& defaultPivot = ImVec2{0.0f, 0.0f}) {
         const auto viewport = ImGui::GetMainViewport();
@@ -1006,20 +1027,9 @@ void UI::RenderConfigWindow() {
             }
         }
 
-        const auto device = activeInputDevice.load();
-        const bool gamepad = device == RE::INPUT_DEVICE::kGamepad;
-        const auto binding = gamepad ? Config::ToggleKeyGamePad : Config::ToggleKey;
-        const char* toggleModeNames[] = {"SINGLEPRESS", "HOLD", "DOUBLEPRESS", "OFF"};
-        int toggleMode = gamepad ? Config::ToggleModeGamePad : Config::ToggleMode;
-        ImGui::TextUnformatted(Translations::Get("Settings.ToggleMode"));
-        if (ImGui::Combo("##ToggleModeCombo", &toggleMode, toggleModeNames, IM_ARRAYSIZE(toggleModeNames))) {
-            RequestToggleChange(device, binding, static_cast<std::uint8_t>(toggleMode));
-        }
-
-        ImGui::Separator();
-
-        ImGui::TextUnformatted(Translations::Get("Settings.ToggleKey"));
-        RenderKeyBinding("ToggleKey", binding, device);
+        RenderToggleSettings("KeyboardToggleSettings", RE::INPUT_DEVICE::kKeyboard);
+        ImGui::Spacing();
+        RenderToggleSettings("GamepadToggleSettings", RE::INPUT_DEVICE::kGamepad);
         RenderBindingConfirmation();
 
         ImGui::PopItemWidth();  // ADDED: Pop the item width

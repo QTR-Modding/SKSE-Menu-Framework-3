@@ -1,24 +1,29 @@
 #include "FontManager.h"
-#include "Config.h"
-#include "imgui_internal.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <ranges>
 #include <system_error>
 #include <vector>
+
+#include "Config.h"
+#include "SwfFontReader.h"
+#include "imgui_internal.h"
 
 #define ICON_MIN_FA 0xe005
 #define ICON_MAX_FA 0xf8ff
 
 namespace {
     constexpr ImWchar TURKISH_GLYPH_RANGES[] = {
-        0x011E, 0x011F, // G with breve
-        0x0130, 0x0131, // Dotted and dotless I
-        0x015E, 0x015F, // S with cedilla
+        0x011E, 0x011F,  // G with breve
+        0x0130, 0x0131,  // Dotted and dotless I
+        0x015E, 0x015F,  // S with cedilla
         0,
     };
     constexpr ImWchar POLISH_GLYPH_RANGES[] = {
@@ -35,9 +40,8 @@ namespace {
     constexpr auto FONT_DIRECTORY = "Data/SKSE/Plugins/Fonts";
 
     std::string NormalizeFontName(std::string name) {
-        std::ranges::transform(name, name.begin(), [](unsigned char character) {
-            return static_cast<char>(std::tolower(character));
-        });
+        std::ranges::transform(name, name.begin(),
+                               [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
         return name;
     }
 
@@ -89,6 +93,84 @@ namespace {
             container.textFontNames.push_back(path.filename().string());
         }
     }
+
+    ImFont* AddEmbeddedFontData(ImGuiIO& io, const std::vector<std::uint8_t>& trueTypeData, const std::string& fontName,
+                                float size, const ImFontConfig* fontConfig, const ImWchar* glyphRanges) {
+        if (trueTypeData.empty() || trueTypeData.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            return nullptr;
+        }
+
+        const auto memory = ImGui::MemAlloc(trueTypeData.size());
+        if (!memory) {
+            SKSE::log::error("FontLoader: Could not allocate {} bytes for embedded font '{}'.", trueTypeData.size(),
+                             fontName);
+            return nullptr;
+        }
+        std::memcpy(memory, trueTypeData.data(), trueTypeData.size());
+
+        ImFontConfig ownedConfig = fontConfig ? *fontConfig : ImFontConfig();
+        ownedConfig.FontDataOwnedByAtlas = true;
+        std::snprintf(ownedConfig.Name, sizeof(ownedConfig.Name), "%s", fontName.c_str());
+        return io.Fonts->AddFontFromMemoryTTF(memory, static_cast<int>(trueTypeData.size()), size, &ownedConfig,
+                                              glyphRanges);
+    }
+
+    ImFont* AddEmbeddedFont(ImGuiIO& io, const SwfFontReader::FontData& fontData, float size,
+                            const ImFontConfig* fontConfig, const ImWchar* glyphRanges) {
+        return AddEmbeddedFontData(io, fontData.trueTypeData, fontData.name, size, fontConfig, glyphRanges);
+    }
+
+    bool IsSupplementalGlyphLanguageEnabled(SwfFontReader::SupplementalGlyphLanguage language) {
+        switch (language) {
+            case SwfFontReader::SupplementalGlyphLanguage::Chinese:
+                return Config::EnableChinese;
+            case SwfFontReader::SupplementalGlyphLanguage::Japanese:
+                return Config::EnableJapanese;
+            case SwfFontReader::SupplementalGlyphLanguage::None:
+            default:
+                return false;
+        }
+    }
+
+    ImFont* AddEmbeddedCompositeFont(ImGuiIO& io, const SwfFontReader::FontData& fontData, float size,
+                                     const ImFontConfig* fontConfig, const ImWchar* glyphRanges) {
+        const auto font = AddEmbeddedFont(io, fontData, size, fontConfig, glyphRanges);
+        if (!font || fontData.supplementalTrueTypeData.empty() ||
+            !IsSupplementalGlyphLanguageEnabled(fontData.supplementalLanguage)) {
+            return font;
+        }
+
+        ImFontConfig mergeConfig = fontConfig ? *fontConfig : ImFontConfig();
+        mergeConfig.MergeMode = true;
+        mergeConfig.PixelSnapH = true;
+        const auto mergedFont = AddEmbeddedFontData(io, fontData.supplementalTrueTypeData, fontData.supplementalName,
+                                                    size, &mergeConfig, glyphRanges);
+        if (!mergedFont) {
+            SKSE::log::warn("FontLoader: Could not merge localized face '{}' into '{}'.", fontData.supplementalName,
+                            fontData.name);
+        }
+        return font;
+    }
+
+    void RegisterEmbeddedFont(FontContainer& container, const SwfFontReader::FontData& fontData, ImFont* font) {
+        if (!font) {
+            return;
+        }
+
+        container.fonts.try_emplace(NormalizeFontName(fontData.name), font);
+        for (const auto& alias : fontData.aliases) {
+            container.fonts.try_emplace(NormalizeFontName(alias), font);
+        }
+        container.textFontNames.push_back(fontData.name);
+    }
+
+    bool EmbeddedFontMatches(const SwfFontReader::FontData& fontData, const std::string& normalizedName) {
+        if (NormalizeFontName(fontData.name) == normalizedName) {
+            return true;
+        }
+        return std::ranges::any_of(
+            fontData.aliases, [&](const std::string& alias) { return NormalizeFontName(alias) == normalizedName; });
+    }
 }
 
 FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
@@ -125,8 +207,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
     ImFontConfig font_config;
     font_config.PixelSnapH = true;
 
-    if (Config::EnableChinese) 
-    {
+    if (Config::EnableChinese) {
         font_config.OversampleH = 1;
         font_config.OversampleV = 1;
         io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
@@ -147,27 +228,59 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         SKSE::log::error("FontLoader: Could not enumerate '{}': {}", FONT_DIRECTORY, error.message());
     }
 
+    const auto futuraFonts = SwfFontReader::LoadRegularFuturaFonts();
     const auto primaryName = NormalizeFontName(Config::PrimaryFont);
-    auto primary = std::ranges::find_if(fontFiles, [&](const auto& path) {
-        return NormalizeFontName(path.filename().string()) == primaryName;
-    });
-    if (primary != fontFiles.end()) {
-        result.defaultFontName = primary->filename().string();
-        result.defaultFont = GetFont(io, result.defaultFontName, GetFontSize(*primary, size), &font_config,
-            persistentGlyphRanges.at(size).Data);
-        RegisterFont(result, *primary, result.defaultFont);
+    const auto primaryFile = std::ranges::find_if(
+        fontFiles, [&](const auto& path) { return NormalizeFontName(path.filename().string()) == primaryName; });
+    const auto primaryEmbedded = std::ranges::find_if(
+        futuraFonts, [&](const auto& fontData) { return EmbeddedFontMatches(fontData, primaryName); });
+    const auto englishDefault = std::ranges::find_if(
+        futuraFonts, [](const auto& fontData) { return NormalizeFontName(fontData.sourceName) == "fonts_en.swf"; });
+
+    const SwfFontReader::FontData* selectedEmbedded = nullptr;
+    std::filesystem::path selectedFile;
+    bool useBuiltInDefault = false;
+    if (primaryFile != fontFiles.end()) {
+        selectedFile = *primaryFile;
+        result.defaultFontName = primaryFile->filename().string();
+        result.defaultFont = GetFont(io, result.defaultFontName, GetFontSize(*primaryFile, size), &font_config,
+                                     persistentGlyphRanges.at(size).Data);
+        RegisterFont(result, *primaryFile, result.defaultFont);
+    } else if (primaryEmbedded != futuraFonts.end()) {
+        selectedEmbedded = &*primaryEmbedded;
+        result.defaultFontName = primaryEmbedded->name;
+        result.defaultFont =
+            AddEmbeddedCompositeFont(io, *primaryEmbedded, size, &font_config, persistentGlyphRanges.at(size).Data);
+        RegisterEmbeddedFont(result, *primaryEmbedded, result.defaultFont);
     }
 
-    // rollback mechanism
     if (!result.defaultFont) {
-        SKSE::log::warn("Primary font '{}' failed to load. Falling back to SkyrimMenuFont.ttf.", Config::PrimaryFont);
-        result.defaultFontName = "SkyrimMenuFont.ttf";
-        result.defaultFont = GetFont(io, result.defaultFontName, GetFontSize("SkyrimMenuFont.ttf", size), nullptr,
-            io.Fonts->GetGlyphRangesDefault());
-        RegisterFont(result, "SkyrimMenuFont.ttf", result.defaultFont);
+        if (englishDefault != futuraFonts.end()) {
+            SKSE::log::warn("Primary font '{}' failed to load. Falling back to '{}' from Interface\\{}.",
+                            Config::PrimaryFont, englishDefault->name, englishDefault->sourceName);
+            selectedEmbedded = &*englishDefault;
+            selectedFile.clear();
+            result.defaultFontName = englishDefault->name;
+            result.defaultFont =
+                AddEmbeddedFont(io, *englishDefault, size, &font_config, io.Fonts->GetGlyphRangesDefault());
+            RegisterEmbeddedFont(result, *englishDefault, result.defaultFont);
+        } else {
+            SKSE::log::error(
+                "Primary font '{}' failed to load and no regular Futura Condensed face was found in "
+                "Interface\\fonts_en.swf. Falling back to ImGui's built-in font.",
+                Config::PrimaryFont);
+            ImFontConfig builtInConfig = font_config;
+            builtInConfig.SizePixels = size;
+            result.defaultFontName = "ImGui Default";
+            result.defaultFont = io.Fonts->AddFontDefault(&builtInConfig);
+            result.fonts[NormalizeFontName(result.defaultFontName)] = result.defaultFont;
+            result.textFontNames.push_back(result.defaultFontName);
+            selectedEmbedded = nullptr;
+            selectedFile.clear();
+            useBuiltInDefault = true;
+        }
     }
 
-    // Merge default font and Font Awesome icon
     ImFontConfig merge_config;
     merge_config.MergeMode = true;
     merge_config.PixelSnapH = true;
@@ -176,16 +289,45 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         merge_config.OversampleV = 1;
     }
 
-    GetFont(io, "SkyrimMenuFont.ttf", GetFontSize("SkyrimMenuFont.ttf", size), &merge_config,
-        io.Fonts->GetGlyphRangesDefault());
+    if (englishDefault != futuraFonts.end() && selectedEmbedded != &*englishDefault) {
+        AddEmbeddedFont(io, *englishDefault, size, &merge_config, io.Fonts->GetGlyphRangesDefault());
+    }
 
     static const ImWchar icons_ranges[] = {ICON_MIN_FA, ICON_MAX_FA, 0};
     GetFont(io, "fa-solid-900.ttf", GetFontSize("fa-solid-900.ttf", size), &merge_config, icons_ranges);
     GetFont(io, "fa-regular-400.ttf", GetFontSize("fa-regular-400.ttf", size), &merge_config, icons_ranges);
     GetFont(io, "fa-brands-400.ttf", GetFontSize("fa-brands-400.ttf", size), &merge_config, icons_ranges);
 
-    // Every font is also loaded as an independently selectable face. Both its
-    // filename ("Example.ttf") and stem ("Example") are accepted by the API.
+    auto loadSelectedBase = [&](float fontSize, const ImFontConfig* config, const ImWchar* ranges) -> ImFont* {
+        if (selectedEmbedded) {
+            return AddEmbeddedCompositeFont(io, *selectedEmbedded, fontSize, config, ranges);
+        }
+        if (!selectedFile.empty()) {
+            return GetFont(io, selectedFile.filename().string(), GetFontSize(selectedFile, fontSize), config, ranges);
+        }
+        if (useBuiltInDefault) {
+            ImFontConfig builtInConfig = config ? *config : ImFontConfig();
+            builtInConfig.SizePixels = fontSize;
+            return io.Fonts->AddFontDefault(&builtInConfig);
+        }
+        return nullptr;
+    };
+
+    for (const auto& fontData : futuraFonts) {
+        if (result.fonts.contains(NormalizeFontName(fontData.name))) {
+            continue;
+        }
+        const auto font =
+            AddEmbeddedCompositeFont(io, fontData, size, &font_config, persistentGlyphRanges.at(size).Data);
+        RegisterEmbeddedFont(result, fontData, font);
+        if (!font) {
+            SKSE::log::warn("FontLoader: Embedded font '{}' from '{}' failed to load at size {}.", fontData.name,
+                            fontData.sourceName, size);
+        }
+    }
+
+    // Every custom font is also loaded as an independently selectable face.
+    // Both its filename ("Example.ttf") and stem ("Example") are accepted.
     for (const auto& path : fontFiles) {
         const auto filename = path.filename().string();
         if (result.fonts.contains(NormalizeFontName(filename))) {
@@ -197,7 +339,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
             // Icon fonts do not contain ordinary text. Start a new composite
             // face with the primary text font, then merge only this icon style.
             const auto configuredSize = GetFontSize(path, size);
-            font = GetFont(io, result.defaultFontName, configuredSize, &font_config, persistentGlyphRanges.at(size).Data);
+            font = loadSelectedBase(configuredSize, &font_config, persistentGlyphRanges.at(size).Data);
             if (font) {
                 ImFontConfig namedMergeConfig;
                 namedMergeConfig.MergeMode = true;
@@ -218,6 +360,8 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
     }
 
     std::ranges::sort(result.textFontNames);
+    const auto uniqueName = std::ranges::unique(result.textFontNames);
+    result.textFontNames.erase(uniqueName.begin(), uniqueName.end());
     SKSE::log::info("Font loading process for size {} completed.", size);
     return result;
 }
@@ -233,12 +377,14 @@ void FontManager::CleanFont() {
     currentFontName.clear();
 }
 
-void FontManager::RequestAtlasRebuild() {
-    atlasRebuildRequested.store(true);
-}
+void FontManager::RequestAtlasRebuild() { atlasRebuildRequested.store(true); }
 
 bool FontManager::ConsumeAtlasRebuildRequest() {
-    return atlasRebuildRequested.exchange(false);
+    if (!atlasRebuildRequested.exchange(false)) {
+        return false;
+    }
+    persistentGlyphRanges.clear();
+    return true;
 }
 
 void FontManager::SetFont(Font font) {
@@ -272,7 +418,7 @@ void FontManager::ProcessFont() {
 }
 
 ImFont* FontManager::GetFont(ImGuiIO& io, std::string name, float size, const ImFontConfig* font_cfg = NULL,
-                const ImWchar* glyph_ranges = NULL) {
+                             const ImWchar* glyph_ranges = NULL) {
     std::string path = "Data/SKSE/Plugins/Fonts/" + name;
     if (std::filesystem::exists(path)) {
         return io.Fonts->AddFontFromFileTTF(path.c_str(), size, font_cfg, glyph_ranges);

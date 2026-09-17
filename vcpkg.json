@@ -13,7 +13,8 @@
     "directxmath",
     "directxtk",
     "nlohmann-json",
-    "clib-util"
+    "clib-util",
+    "zlib"
   ],
   "overrides": [
     {

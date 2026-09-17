@@ -16,3 +16,11 @@ License: MIT
 Copyright (c) 2024 ccld
 
 The complete applicable license texts are included in the Third Party directory.
+
+The native SWF font reader and TrueType conversion behavior was developed with
+the following open-source project as a format and algorithm reference:
+
+JPEXS Free Flash Decompiler by Jindra Petřík and contributors
+https://github.com/jindrapetrik/jpexs-decompiler
+Relevant components: DefineFont3 parser, FontExporter, Fontastic, and DoubleType
+Licenses: GNU GPL v3 or later, GNU LGPL v3 or later, and GNU LGPL v2.1 or later

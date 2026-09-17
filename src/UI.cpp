@@ -2,6 +2,7 @@
 #include "WindowManager.h"
 #include "GamepadNavigation.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <deque>
 #include <imgui.h>
@@ -1003,6 +1004,30 @@ void UI::RenderConfigWindow() {
                 const bool isSelected = ImStricmp(name.c_str(), fonts.defaultFontName.c_str()) == 0;
                 if (ImGui::Selectable(name.c_str(), isSelected) && ImStricmp(name.c_str(), Config::PrimaryFont.c_str()) != 0) {
                     Config::PrimaryFont = name;
+                    Config::Save();
+                    FontManager::RequestAtlasRebuild();
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        constexpr std::array glyphLanguageKeys = {"Settings.GlyphLanguage.Default",  "Settings.GlyphLanguage.Chinese",
+                                                  "Settings.GlyphLanguage.Japanese", "Settings.GlyphLanguage.Korean",
+                                                  "Settings.GlyphLanguage.Cyrillic", "Settings.GlyphLanguage.Thai",
+                                                  "Settings.GlyphLanguage.Turkish",  "Settings.GlyphLanguage.Polish"};
+        const auto selectedGlyphLanguage = Config::GetGlyphLanguage();
+        const auto selectedGlyphLanguageIndex = static_cast<std::size_t>(selectedGlyphLanguage);
+
+        ImGui::TextUnformatted(Translations::Get("Settings.GlyphLanguage"));
+        if (ImGui::BeginCombo("##GlyphLanguage", Translations::Get(glyphLanguageKeys[selectedGlyphLanguageIndex]))) {
+            for (std::size_t index = 0; index < glyphLanguageKeys.size(); ++index) {
+                const auto language = static_cast<Config::GlyphLanguage>(index);
+                const bool isSelected = language == selectedGlyphLanguage;
+                if (ImGui::Selectable(Translations::Get(glyphLanguageKeys[index]), isSelected) && !isSelected) {
+                    Config::SetGlyphLanguage(language);
                     Config::Save();
                     FontManager::RequestAtlasRebuild();
                 }

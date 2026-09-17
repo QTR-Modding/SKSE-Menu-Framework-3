@@ -1,9 +1,11 @@
 ﻿#include "Config.h"
+
+#include <algorithm>
+#include <cmath>
+
 #include "Application.h"
 #include "Theme.h"
 #include "Utils.h"
-#include <algorithm>
-#include <cmath>
 unsigned int Config::ToggleKey = 0x3B;
 uint8_t Config::ToggleMode = 0;
 unsigned int Config::ToggleKeyGamePad = 0;
@@ -14,8 +16,8 @@ bool Config::FreezeTimeOnMenu = true;
 int Config::MenuStyle = 0;
 std::vector<std::string> Config::MenuStyles;
 bool Config::BlurBackgroundOnMenu = true;
-std::string Config::PrimaryFont = "CN.ttf";  
-bool Config::EnableChinese = true;                                
+std::string Config::PrimaryFont = "Futura Condensed (EN)";
+bool Config::EnableChinese = false;
 bool Config::EnableJapanese = false;
 bool Config::EnableKorean = false;
 bool Config::EnableCyrillic = false;
@@ -26,15 +28,14 @@ float Config::FontSizeMedium = 32.0f;
 float Config::MinFontSize = 12.0f;
 float Config::MaxFontSize = 64.0f;
 
-
 void Config::Init() {
-	const auto ini = new Ini("SKSEMenuFramework.ini");
+    const auto ini = new Ini("SKSEMenuFramework.ini");
     ini->SetSection("General");
 
     ToggleKey = GetKeyBinding(ini->GetString("ToggleKey", "f1"));
     ToggleMode = GetToggleMode(ini->GetString("ToggleMode", "SinglePress"));
 
-    ToggleKeyGamePad = GetKeyBinding(ini->GetString("ToggleKeyGamePad", ""),RE::INPUT_DEVICE::kGamepad);
+    ToggleKeyGamePad = GetKeyBinding(ini->GetString("ToggleKeyGamePad", ""), RE::INPUT_DEVICE::kGamepad);
     ToggleModeGamePad = GetToggleMode(ini->GetString("ToggleModeGamePad", "DoublePress"));
     DoublePressThreshold = ini->GetInt("DoublePressThreshold", 300);
     if (DoublePressThreshold < 50) DoublePressThreshold = 50;
@@ -48,15 +49,16 @@ void Config::Init() {
     MenuStyles = Theme::GetJsonFiles();
     Config::MenuStyle = Utils::indexOf(Config::MenuStyles, Utils::toUpperCase(menuStyleStr));
 
-    ini->SetSection("Fonts");  
-    PrimaryFont = ini->GetString("PrimaryFont", "MainFont.ttf");
-    EnableChinese = ini->GetBool("EnableChinese", true);
+    ini->SetSection("Fonts");
+    PrimaryFont = ini->GetString("PrimaryFont", "Futura Condensed (EN)");
+    EnableChinese = ini->GetBool("EnableChinese", false);
     EnableJapanese = ini->GetBool("EnableJapanese", false);
     EnableKorean = ini->GetBool("EnableKorean", false);
     EnableCyrillic = ini->GetBool("EnableCyrillic", false);
     EnableThai = ini->GetBool("EnableThai", false);
     EnableTurkish = ini->GetBool("EnableTurkish", false);
     EnablePolish = ini->GetBool("EnablePolish", false);
+    SetGlyphLanguage(GetGlyphLanguage());
     MinFontSize = ini->GetFloat("MinFontSize", 12.0f);
     MaxFontSize = ini->GetFloat("MaxFontSize", 64.0f);
     if (!std::isfinite(MinFontSize)) {
@@ -144,10 +146,27 @@ void Config::Save() {
     delete ini;
 }
 
-void Config::LoadStyle() {
-    
-    Theme::LoadJsonStyle(MenuStyles[MenuStyle]);
+void Config::LoadStyle() { Theme::LoadJsonStyle(MenuStyles[MenuStyle]); }
 
+Config::GlyphLanguage Config::GetGlyphLanguage() {
+    if (EnableChinese) return GlyphLanguage::Chinese;
+    if (EnableJapanese) return GlyphLanguage::Japanese;
+    if (EnableKorean) return GlyphLanguage::Korean;
+    if (EnableCyrillic) return GlyphLanguage::Cyrillic;
+    if (EnableThai) return GlyphLanguage::Thai;
+    if (EnableTurkish) return GlyphLanguage::Turkish;
+    if (EnablePolish) return GlyphLanguage::Polish;
+    return GlyphLanguage::Default;
+}
+
+void Config::SetGlyphLanguage(GlyphLanguage language) {
+    EnableChinese = language == GlyphLanguage::Chinese;
+    EnableJapanese = language == GlyphLanguage::Japanese;
+    EnableKorean = language == GlyphLanguage::Korean;
+    EnableCyrillic = language == GlyphLanguage::Cyrillic;
+    EnableThai = language == GlyphLanguage::Thai;
+    EnableTurkish = language == GlyphLanguage::Turkish;
+    EnablePolish = language == GlyphLanguage::Polish;
 }
 
 float Config::NormalizeFontSize(float size) {

@@ -145,6 +145,7 @@ target_include_directories(
 
 
 find_package(NanoSVG REQUIRED)
+find_package(ZLIB REQUIRED)
 
 find_library(DIRECTXTK_LIBRARY NAMES DirectXTK PATHS ${CMAKE_BINARY_DIR}/debug/vcpkg_installed/x64-windows-static/lib)
 target_link_libraries(
@@ -152,6 +153,7 @@ target_link_libraries(
 	PRIVATE
         NanoSVG::nanosvg 
         NanoSVG::nanosvgrast
+        ZLIB::ZLIB
         ${DIRECTXTK_LIBRARY}
 )
 

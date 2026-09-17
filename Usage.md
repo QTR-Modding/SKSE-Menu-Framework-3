@@ -110,10 +110,19 @@ Here is what this example will look like:
 You can browse icons and get the Unicode IDs from the [Font Awesome](https://fontawesome.com/search?o=r&m=free) website
 ![image](https://github.com/Thiago099/SKSE-Menu-Framework-SDK/assets/66787043/ec5f14f1-5658-4f6e-8e60-2342f47f078e)
 
-All `.ttf` and `.otf` files in `Data/SKSE/Plugins/Fonts` are loaded at the small, default, and big configured sizes. Select one by filename or by its filename without the extension:
+The regular Futura Condensed faces from the game's `Data/Interface/fonts_*.swf`
+files are available as `Futura Condensed (EN)`, `(CN)`, `(JA)`, `(PL)`,
+and `(RU)`.
+
+The CN and JA choices automatically merge the localized UI face from their
+respective SWF when Chinese or Japanese character glyphs are enabled in the
+framework settings. The supplemental faces remain hidden from the font list.
+
+Custom `.ttf` and `.otf` files in `Data/SKSE/Plugins/Fonts` remain available by
+filename or filename stem:
 
 ```cpp
-SKSEMenuFramework::PushFont("SkyrimMenuFont.ttf"); // "SkyrimMenuFont" also works
+SKSEMenuFramework::PushFont("Futura Condensed (EN)");
 ImGui::Text("This text uses the selected font.");
 FontAwesome::Pop();
 ```

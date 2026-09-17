@@ -1,8 +1,9 @@
 #pragma once
 
-
 class Config {
-    public:
+public:
+    enum class GlyphLanguage : uint8_t { Default, Chinese, Japanese, Korean, Cyrillic, Thai, Turkish, Polish };
+
     static float MinFontSize;
     static float MaxFontSize;
 
@@ -27,6 +28,8 @@ class Config {
     static bool EnableTurkish;
     static bool EnablePolish;
     static float FontSizeMedium;
+    static GlyphLanguage GetGlyphLanguage();
+    static void SetGlyphLanguage(GlyphLanguage language);
     static float NormalizeFontSize(float size);
     static void LoadStyle();
 };

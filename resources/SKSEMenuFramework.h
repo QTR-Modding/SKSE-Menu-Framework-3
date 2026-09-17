@@ -11194,6 +11194,74 @@ namespace ImGuiMCP {
 }
 
 namespace ImGuiMCPComponents {
+    namespace Detail {
+        inline ImGuiMCP::ImGuiID activeKeyBindingPicker = 0;
+
+        inline void RenderComponentLabel(const char* label) {
+            std::string displayLabel = label;
+            const size_t hiddenLabelPosition = displayLabel.find("##");
+            if (hiddenLabelPosition != std::string::npos) {
+                ImGuiMCP::Text("%.*s", static_cast<int>(hiddenLabelPosition), displayLabel.c_str());
+            } else {
+                ImGuiMCP::TextUnformatted(label);
+            }
+        }
+
+        inline ImGuiMCP::ImGuiKey FindPressedKey() {
+            for (int keyValue = ImGuiMCP::ImGuiKey_NamedKey_BEGIN;
+                 keyValue < ImGuiMCP::ImGuiKey_NamedKey_END;
+                 ++keyValue) {
+                const auto key = static_cast<ImGuiMCP::ImGuiKey>(keyValue);
+                if (key != ImGuiMCP::ImGuiKey_Escape && ImGuiMCP::IsKeyPressed(key, false)) {
+                    return key;
+                }
+            }
+            return ImGuiMCP::ImGuiKey_None;
+        }
+    }
+
+    inline bool KeyBindingPicker(const char* label, ImGuiMCP::ImGuiKey* binding) {
+        if (!label || !binding) {
+            return false;
+        }
+
+        ImGuiMCP::PushID(label);
+        const auto pickerID = ImGuiMCP::GetID("##KeyBindingPicker");
+        const bool isCapturing = Detail::activeKeyBindingPicker == pickerID;
+        const char* bindingName = *binding == ImGuiMCP::ImGuiKey_None ? "Unbound" : ImGuiMCP::GetKeyName(*binding);
+        const char* buttonText = isCapturing ? "Press a key...###KeyBindingPicker" : bindingName;
+        const bool captureStarted = ImGuiMCP::Button(buttonText);
+
+        if (captureStarted) {
+            Detail::activeKeyBindingPicker = pickerID;
+        }
+
+        bool changed = false;
+        ImGuiMCP::SameLine();
+        if (ImGuiMCP::Button("Clear")) {
+            changed = *binding != ImGuiMCP::ImGuiKey_None;
+            *binding = ImGuiMCP::ImGuiKey_None;
+            Detail::activeKeyBindingPicker = 0;
+        }
+
+        ImGuiMCP::SameLine();
+        Detail::RenderComponentLabel(label);
+
+        if (Detail::activeKeyBindingPicker == pickerID && !captureStarted && !changed) {
+            ImGuiMCP::SetNextFrameWantCaptureKeyboard(true);
+            if (ImGuiMCP::IsKeyPressed(ImGuiMCP::ImGuiKey_Escape, false)) {
+                Detail::activeKeyBindingPicker = 0;
+            } else if (const auto pressedKey = Detail::FindPressedKey(); pressedKey != ImGuiMCP::ImGuiKey_None) {
+                changed = *binding != pressedKey;
+                *binding = pressedKey;
+                Detail::activeKeyBindingPicker = 0;
+            }
+        }
+
+        ImGuiMCP::PopID();
+        return changed;
+    }
+
     inline bool ToggleButton(const char* label, bool* v) {
         auto p = ImGuiMCP::GetCursorScreenPos();
         ImGuiMCP::ImDrawList* draw_list = ImGuiMCP::GetWindowDrawList();
@@ -11228,13 +11296,7 @@ namespace ImGuiMCPComponents {
 
         ImGuiMCP::SameLine();
 
-        std::string displayLabel = label;
-        size_t pos = displayLabel.find("##");
-        if (pos != std::string::npos) {
-            ImGuiMCP::Text("%.*s", (int)pos, displayLabel.c_str());
-        } else {
-            ImGuiMCP::Text("%s", label);
-        }
+        Detail::RenderComponentLabel(label);
 
         return clicked;
     }

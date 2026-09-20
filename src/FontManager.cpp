@@ -1,5 +1,6 @@
 #include "FontManager.h"
 #include "Config.h"
+#include "SkyrimMenuFontData.h"
 #include "imgui_internal.h"
 
 #include <algorithm>
@@ -33,6 +34,7 @@ namespace {
     };
 
     constexpr auto FONT_DIRECTORY = "Data/SKSE/Plugins/Fonts";
+    constexpr auto SKYRIM_MENU_FONT_NAME = "SkyrimMenuFont";
 
     std::string NormalizeFontName(std::string name) {
         std::ranges::transform(name, name.begin(), [](unsigned char character) {
@@ -88,6 +90,14 @@ namespace {
         if (!IsFontAwesome(path.filename().string())) {
             container.textFontNames.push_back(path.filename().string());
         }
+    }
+
+    ImFont* AddSkyrimMenuFont(ImGuiIO& io, float size, const ImFontConfig* fontConfig,
+                              const ImWchar* glyphRanges) {
+        ImFontConfig embeddedConfig = fontConfig ? *fontConfig : ImFontConfig();
+        embeddedConfig.FontDataOwnedByAtlas = false;
+        return io.Fonts->AddFontFromMemoryTTF(SkyrimMenuFontData::bytes, SkyrimMenuFontData::size, size,
+                                              &embeddedConfig, glyphRanges);
     }
 }
 
@@ -151,7 +161,12 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
     auto primary = std::ranges::find_if(fontFiles, [&](const auto& path) {
         return NormalizeFontName(path.filename().string()) == primaryName;
     });
-    if (primary != fontFiles.end()) {
+    if (primaryName == NormalizeFontName(SKYRIM_MENU_FONT_NAME)) {
+        result.defaultFontName = SKYRIM_MENU_FONT_NAME;
+        result.defaultFont = AddSkyrimMenuFont(io, GetFontSize(SKYRIM_MENU_FONT_NAME, size), &font_config,
+                                               persistentGlyphRanges.at(size).Data);
+        RegisterFont(result, SKYRIM_MENU_FONT_NAME, result.defaultFont);
+    } else if (primary != fontFiles.end()) {
         result.defaultFontName = primary->filename().string();
         result.defaultFont = GetFont(io, result.defaultFontName, GetFontSize(*primary, size), &font_config,
             persistentGlyphRanges.at(size).Data);
@@ -160,11 +175,12 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
 
     // rollback mechanism
     if (!result.defaultFont) {
-        SKSE::log::warn("Primary font '{}' failed to load. Falling back to SkyrimMenuFont.ttf.", Config::PrimaryFont);
-        result.defaultFontName = "SkyrimMenuFont.ttf";
-        result.defaultFont = GetFont(io, result.defaultFontName, GetFontSize("SkyrimMenuFont.ttf", size), nullptr,
-            io.Fonts->GetGlyphRangesDefault());
-        RegisterFont(result, "SkyrimMenuFont.ttf", result.defaultFont);
+        SKSE::log::warn("Primary font '{}' failed to load. Falling back to embedded SkyrimMenuFont.",
+                        Config::PrimaryFont);
+        result.defaultFontName = SKYRIM_MENU_FONT_NAME;
+        result.defaultFont = AddSkyrimMenuFont(io, GetFontSize(SKYRIM_MENU_FONT_NAME, size), nullptr,
+                                               io.Fonts->GetGlyphRangesDefault());
+        RegisterFont(result, SKYRIM_MENU_FONT_NAME, result.defaultFont);
     }
 
     // Merge default font and Font Awesome icon
@@ -176,13 +192,22 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         merge_config.OversampleV = 1;
     }
 
-    GetFont(io, "SkyrimMenuFont.ttf", GetFontSize("SkyrimMenuFont.ttf", size), &merge_config,
-        io.Fonts->GetGlyphRangesDefault());
+    AddSkyrimMenuFont(io, GetFontSize(SKYRIM_MENU_FONT_NAME, size), &merge_config,
+                      io.Fonts->GetGlyphRangesDefault());
 
     static const ImWchar icons_ranges[] = {ICON_MIN_FA, ICON_MAX_FA, 0};
     GetFont(io, "fa-solid-900.ttf", GetFontSize("fa-solid-900.ttf", size), &merge_config, icons_ranges);
     GetFont(io, "fa-regular-400.ttf", GetFontSize("fa-regular-400.ttf", size), &merge_config, icons_ranges);
     GetFont(io, "fa-brands-400.ttf", GetFontSize("fa-brands-400.ttf", size), &merge_config, icons_ranges);
+
+    if (!result.fonts.contains(NormalizeFontName(SKYRIM_MENU_FONT_NAME))) {
+        const auto skyrimMenuFont = AddSkyrimMenuFont(io, GetFontSize(SKYRIM_MENU_FONT_NAME, size), &font_config,
+                                                      persistentGlyphRanges.at(size).Data);
+        RegisterFont(result, SKYRIM_MENU_FONT_NAME, skyrimMenuFont);
+        if (!skyrimMenuFont) {
+            SKSE::log::warn("FontLoader: Embedded SkyrimMenuFont failed to load at size {}.", size);
+        }
+    }
 
     // Every font is also loaded as an independently selectable face. Both its
     // filename ("Example.ttf") and stem ("Example") are accepted by the API.

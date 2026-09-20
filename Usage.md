@@ -113,7 +113,7 @@ You can browse icons and get the Unicode IDs from the [Font Awesome](https://fon
 All `.ttf` and `.otf` files in `Data/SKSE/Plugins/Fonts` are loaded at the small, default, and big configured sizes. Select one by filename or by its filename without the extension:
 
 ```cpp
-SKSEMenuFramework::PushFont("SkyrimMenuFont.ttf"); // "SkyrimMenuFont" also works
+SKSEMenuFramework::PushFont("SkyrimMenuFont"); // Uses the framework's embedded Skyrim menu font
 ImGui::Text("This text uses the selected font.");
 FontAwesome::Pop();
 ```

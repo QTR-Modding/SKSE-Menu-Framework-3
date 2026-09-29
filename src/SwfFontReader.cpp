@@ -1164,13 +1164,18 @@ namespace SwfFontReader {
             return nullptr;
         }
 
-        std::optional<FontData> LoadConfiguredFont(const std::string& configName, const std::string& resourceName,
-                                                  const std::string& language, FaceCache& cache) {
+        struct ConfiguredFonts {
+            std::optional<FontData> futura;
+            std::optional<FontData> replacement;
+        };
+
+        ConfiguredFonts LoadConfiguredFonts(const std::string& configName, const std::string& resourceName,
+                                           const std::string& language, FaceCache& cache) {
             constexpr std::uint32_t MAX_CONFIG_SIZE = 4 * 1024 * 1024;
             const auto file = ReadGameResource(configName, MAX_CONFIG_SIZE);
             if (!file) {
                 logger::info("SWF font reader: Interface\\{} is unavailable; trying vanilla fonts.", configName);
-                return std::nullopt;
+                return {};
             }
             try {
                 const auto config = FontConfigReader::Parse(
@@ -1183,8 +1188,27 @@ namespace SwfFontReader {
                                        : mapped->bold                ? " Bold"
                                        : mapped->italic              ? " Italic"
                                                                      : "";
+                    const auto faceName = std::format("{}{}", mapped->name, style);
+                    const auto configuredName = std::format("{} ({})", faceName, language);
+                    const auto isRegularFutura =
+                        IsRegularFuturaCondensed(mapped->name, mapped->bold, mapped->italic);
+                    const auto supplementalLanguage =
+                        GetSupplementalGlyphLanguage(library, mapped->name, mapped->bold, mapped->italic);
+                    ConfiguredFonts fonts;
+                    if (!isRegularFutura && supplementalLanguage == SupplementalGlyphLanguage::None) {
+                        // A configured replacement needs its own base glyphs and metrics.
+                        // Only the known vanilla localized supplements stay hidden.
+                        fonts.replacement = *mapped;
+                        fonts.replacement->name = configuredName;
+                        fonts.replacement->aliases = {faceName, mapped->name};
+                        logger::info(
+                            "SWF font reader: Added selectable '{}' from Interface\\{} "
+                            "($StartMenuFont in Interface\\{}).",
+                            configuredName, library, configName);
+                    }
+
                     const FontData* base = &*mapped;
-                    if (!IsRegularFuturaCondensed(mapped->name, mapped->bold, mapped->italic)) {
+                    if (!isRegularFutura) {
                         base = LoadFuturaFace(resourceName, cache);
                         if (!base && ToLower(resourceName) != "fonts_en.swf") {
                             base = LoadFuturaFace("fonts_en.swf", cache);
@@ -1194,7 +1218,7 @@ namespace SwfFontReader {
                                 "SWF font reader: Could not find regular Futura for Interface\\{}; "
                                 "trying vanilla fonts.",
                                 configName);
-                            return std::nullopt;
+                            return fonts;
                         }
                     }
 
@@ -1202,12 +1226,13 @@ namespace SwfFontReader {
                     const auto legacyLanguage = language == "Default" ? "EN" : language;
                     font.name = std::format("Futura Condensed ({})", legacyLanguage);
                     font.isVanillaFallback = base->isVanillaFallback && legacyLanguage == "EN";
-                    // Accept names saved by the configuration-based loader while
-                    // retaining Futura's glyphs and metrics as the composite base.
-                    font.aliases = {std::format("{}{} ({})", mapped->name, style, language), mapped->name};
+                    // Replacement names belong to the independently selectable face.
+                    // Keep legacy aliases for Futura and hidden localized supplements.
+                    font.aliases.clear();
+                    if (!fonts.replacement) font.aliases = {configuredName, mapped->name};
                     if (language == "Default") font.aliases.push_back("Futura Condensed");
                     if (base != &*mapped) {
-                        font.supplementalName = std::format("{}{}", mapped->name, style);
+                        font.supplementalName = faceName;
                         font.supplementalTrueTypeData = mapped->trueTypeData;
                         font.supplementalLanguage = language == "CN" ? SupplementalGlyphLanguage::Chinese
                                                     : language == "JA" ? SupplementalGlyphLanguage::Japanese
@@ -1220,7 +1245,8 @@ namespace SwfFontReader {
                         logger::info("SWF font reader: Interface\\{} resolves '{}' to '{}' in Interface\\{}.",
                                      configName, font.name, mapped->name, library);
                     }
-                    return font;
+                    fonts.futura = std::move(font);
+                    return fonts;
                 }
                 logger::warn(
                     "SWF font reader: Could not resolve $StartMenuFont '{}' (bold={}, italic={}) in "
@@ -1230,7 +1256,7 @@ namespace SwfFontReader {
                 logger::warn("SWF font reader: Could not read Interface\\{}: {}; trying vanilla fonts.", configName,
                              exception.what());
             }
-            return std::nullopt;
+            return {};
         }
 
         std::map<std::string, std::string> GetFontConfigurations() {
@@ -1274,9 +1300,10 @@ namespace SwfFontReader {
         // to prefer the default configuration over localized choices.
         for (const auto& [config, resource] : GetFontConfigurations()) {
             const auto language = config == "fontconfig.txt" ? "Default" : GetLanguageName(resource);
-            auto font = LoadConfiguredFont(config, resource, language, cache);
-            if (!font) font = LoadFallbackFont(resource);
-            if (font) fonts.push_back(std::move(*font));
+            auto configured = LoadConfiguredFonts(config, resource, language, cache);
+            if (!configured.futura) configured.futura = LoadFallbackFont(resource);
+            if (configured.futura) fonts.push_back(std::move(*configured.futura));
+            if (configured.replacement) fonts.push_back(std::move(*configured.replacement));
         }
 
         // Keep a genuine English fallback even when fontconfig.txt is localized.

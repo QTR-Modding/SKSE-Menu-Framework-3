@@ -20,8 +20,9 @@ namespace SwfFontReader {
         bool italic = false;
     };
 
-    // Keeps regular Futura as the base and resolves supplemental $StartMenuFont
-    // faces from Interface/fontconfig*.txt through BSResource, including overrides.
-    // Vanilla supplemental faces are used when configuration cannot be resolved.
+    // Loads Futura composites and independently selectable $StartMenuFont replacements
+    // from Interface/fontconfig*.txt through BSResource, including overrides.
+    // Known vanilla localized faces stay supplemental; vanilla fonts are used
+    // when configuration cannot be resolved.
     std::vector<FontData> LoadMenuFonts();
 }

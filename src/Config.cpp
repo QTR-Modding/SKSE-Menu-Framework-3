@@ -1,7 +1,9 @@
 ﻿#include "Config.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <stdexcept>
 
 #include "Application.h"
 #include "Theme.h"
@@ -58,7 +60,6 @@ void Config::Init() {
     EnableThai = ini->GetBool("EnableThai", false);
     EnableTurkish = ini->GetBool("EnableTurkish", false);
     EnablePolish = ini->GetBool("EnablePolish", false);
-    SetGlyphLanguage(GetGlyphLanguage());
     MinFontSize = ini->GetFloat("MinFontSize", 12.0f);
     MaxFontSize = ini->GetFloat("MaxFontSize", 64.0f);
     if (!std::isfinite(MinFontSize)) {
@@ -149,6 +150,10 @@ void Config::Save() {
 void Config::LoadStyle() { Theme::LoadJsonStyle(MenuStyles[MenuStyle]); }
 
 Config::GlyphLanguage Config::GetGlyphLanguage() {
+    const std::array enabledRanges = {EnableChinese, EnableJapanese, EnableKorean, EnableCyrillic,
+                                      EnableThai, EnableTurkish, EnablePolish};
+    if (std::count(enabledRanges.begin(), enabledRanges.end(), true) > 1) return GlyphLanguage::Custom;
+
     if (EnableChinese) return GlyphLanguage::Chinese;
     if (EnableJapanese) return GlyphLanguage::Japanese;
     if (EnableKorean) return GlyphLanguage::Korean;
@@ -160,13 +165,28 @@ Config::GlyphLanguage Config::GetGlyphLanguage() {
 }
 
 void Config::SetGlyphLanguage(GlyphLanguage language) {
-    EnableChinese = language == GlyphLanguage::Chinese;
-    EnableJapanese = language == GlyphLanguage::Japanese;
-    EnableKorean = language == GlyphLanguage::Korean;
-    EnableCyrillic = language == GlyphLanguage::Cyrillic;
-    EnableThai = language == GlyphLanguage::Thai;
-    EnableTurkish = language == GlyphLanguage::Turkish;
-    EnablePolish = language == GlyphLanguage::Polish;
+    if (language == GlyphLanguage::Custom) {
+        throw std::invalid_argument("Custom glyph ranges require an explicit selection");
+    }
+
+    SetGlyphRangeSelection({language == GlyphLanguage::Chinese, language == GlyphLanguage::Japanese,
+                            language == GlyphLanguage::Korean, language == GlyphLanguage::Cyrillic,
+                            language == GlyphLanguage::Thai, language == GlyphLanguage::Turkish,
+                            language == GlyphLanguage::Polish});
+}
+
+Config::GlyphRangeSelection Config::GetGlyphRangeSelection() {
+    return {EnableChinese, EnableJapanese, EnableKorean, EnableCyrillic, EnableThai, EnableTurkish, EnablePolish};
+}
+
+void Config::SetGlyphRangeSelection(const GlyphRangeSelection& selection) {
+    EnableChinese = selection.Chinese;
+    EnableJapanese = selection.Japanese;
+    EnableKorean = selection.Korean;
+    EnableCyrillic = selection.Cyrillic;
+    EnableThai = selection.Thai;
+    EnableTurkish = selection.Turkish;
+    EnablePolish = selection.Polish;
 }
 
 float Config::NormalizeFontSize(float size) {

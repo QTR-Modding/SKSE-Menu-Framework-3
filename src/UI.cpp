@@ -1017,13 +1017,22 @@ void UI::RenderConfigWindow() {
         constexpr std::array glyphLanguageKeys = {"Settings.GlyphLanguage.Default",  "Settings.GlyphLanguage.Chinese",
                                                   "Settings.GlyphLanguage.Japanese", "Settings.GlyphLanguage.Korean",
                                                   "Settings.GlyphLanguage.Cyrillic", "Settings.GlyphLanguage.Thai",
-                                                  "Settings.GlyphLanguage.Turkish",  "Settings.GlyphLanguage.Polish"};
+                                                  "Settings.GlyphLanguage.Turkish",  "Settings.GlyphLanguage.Polish",
+                                                  "Settings.GlyphLanguage.Custom"};
         const auto selectedGlyphLanguage = Config::GetGlyphLanguage();
         const auto selectedGlyphLanguageIndex = static_cast<std::size_t>(selectedGlyphLanguage);
+        const auto glyphModalTitle = std::format("{}###CustomGlyphRanges",
+            Translations::Get("Settings.GlyphLanguage.Custom.Title"));
+        static Config::GlyphRangeSelection pendingGlyphRanges;
+        const char* configureGlyphsLabel = Translations::Get("Settings.GlyphLanguage.Configure");
+        const float configureGlyphsWidth = ImGui::CalcTextSize(configureGlyphsLabel).x +
+            ImGui::GetStyle().FramePadding.x * 2.0f;
+        const float glyphComboWidth = std::max(ImGui::GetFrameHeight(),
+            contentWidth - configureGlyphsWidth - ImGui::GetStyle().ItemSpacing.x);
 
-        ImGui::TextUnformatted(Translations::Get("Settings.GlyphLanguage"));
+        ImGui::PushItemWidth(glyphComboWidth);
         if (ImGui::BeginCombo("##GlyphLanguage", Translations::Get(glyphLanguageKeys[selectedGlyphLanguageIndex]))) {
-            for (std::size_t index = 0; index < glyphLanguageKeys.size(); ++index) {
+            for (std::size_t index = 0; index < static_cast<std::size_t>(Config::GlyphLanguage::Custom); ++index) {
                 const auto language = static_cast<Config::GlyphLanguage>(index);
                 const bool isSelected = language == selectedGlyphLanguage;
                 if (ImGui::Selectable(Translations::Get(glyphLanguageKeys[index]), isSelected) && !isSelected) {
@@ -1036,6 +1045,37 @@ void UI::RenderConfigWindow() {
                 }
             }
             ImGui::EndCombo();
+        }
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        if (ImGui::Button(configureGlyphsLabel, ImVec2(configureGlyphsWidth, 0.0f))) {
+            pendingGlyphRanges = Config::GetGlyphRangeSelection();
+            ImGui::OpenPopup(glyphModalTitle.c_str());
+        }
+        if (ImGui::BeginPopupModal(glyphModalTitle.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted(Translations::Get("Settings.GlyphLanguage.DefaultIncluded"));
+            ImGui::Separator();
+            ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Chinese"), &pendingGlyphRanges.Chinese);
+            ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Japanese"), &pendingGlyphRanges.Japanese);
+            ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Korean"), &pendingGlyphRanges.Korean);
+            ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Cyrillic"), &pendingGlyphRanges.Cyrillic);
+            ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Thai"), &pendingGlyphRanges.Thai);
+            ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Turkish"), &pendingGlyphRanges.Turkish);
+            ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Polish"), &pendingGlyphRanges.Polish);
+            ImGui::Separator();
+            const bool cancel = ImGui::Button(Translations::Get("Settings.GlyphLanguage.Cancel")) ||
+                ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+            ImGui::SameLine();
+            const bool apply = ImGui::Button(Translations::Get("Settings.GlyphLanguage.Apply"));
+            if (cancel || apply) {
+                if (apply && !cancel && pendingGlyphRanges != Config::GetGlyphRangeSelection()) {
+                    Config::SetGlyphRangeSelection(pendingGlyphRanges);
+                    Config::Save();
+                    FontManager::RequestAtlasRebuild();
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
 
         static float pendingFontSize = Config::FontSizeMedium;

@@ -4,11 +4,7 @@
 # Prefer the COMMONLIB_SSE_FOLDER env var (a shared local clone) when set; else
 # fall back to the vendored submodule so the build is self-contained (CI, fresh
 # contributors) with a pinned, static dependency.
-if(DEFINED ENV{COMMONLIB_SSE_FOLDER})
-  set(COMMONLIBSSE_DIR "$ENV{COMMONLIB_SSE_FOLDER}")
-else()
-  set(COMMONLIBSSE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/CommonLibSSE-NG")
-endif()
+set(COMMONLIBSSE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/CommonLibSSE-NG")
 if(NOT EXISTS "${COMMONLIBSSE_DIR}/CMakeLists.txt")
   message(FATAL_ERROR "CommonLibSSE-NG not found at '${COMMONLIBSSE_DIR}'. Set COMMONLIB_SSE_FOLDER or run: git submodule update --init --recursive")
 endif()

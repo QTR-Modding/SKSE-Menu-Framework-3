@@ -5,7 +5,7 @@
 #include <vector>
 
 namespace SwfFontReader {
-    enum class SupplementalGlyphLanguage : std::uint8_t { None, Chinese, Japanese };
+    enum class SupplementalGlyphLanguage : std::uint8_t { None, Chinese, Japanese, Configured };
 
     struct FontData {
         std::string name;
@@ -15,14 +15,13 @@ namespace SwfFontReader {
         std::string supplementalName;
         std::vector<std::uint8_t> supplementalTrueTypeData;
         SupplementalGlyphLanguage supplementalLanguage = SupplementalGlyphLanguage::None;
+        bool isVanillaFallback = false;
         bool bold = false;
         bool italic = false;
     };
 
-    // Reads the regular Futura Condensed face from each of Skyrim's
-    // game-relative Interface/fonts_*.swf resources. Localized supplemental
-    // glyph faces remain attached to their Futura face and are not exposed as
-    // separate choices. Loose files and files supplied by the game's archives
-    // are both handled by BSResource.
-    std::vector<FontData> LoadRegularFuturaFonts();
+    // Keeps regular Futura as the base and resolves supplemental $StartMenuFont
+    // faces from Interface/fontconfig*.txt through BSResource, including overrides.
+    // Vanilla supplemental faces are used when configuration cannot be resolved.
+    std::vector<FontData> LoadMenuFonts();
 }

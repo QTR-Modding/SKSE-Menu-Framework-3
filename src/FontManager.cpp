@@ -126,6 +126,9 @@ namespace {
                 return Config::EnableChinese;
             case SwfFontReader::SupplementalGlyphLanguage::Japanese:
                 return Config::EnableJapanese;
+            case SwfFontReader::SupplementalGlyphLanguage::Configured:
+                // The requested glyph ranges already reflect the enabled languages.
+                return true;
             case SwfFontReader::SupplementalGlyphLanguage::None:
             default:
                 return false;
@@ -228,14 +231,14 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         SKSE::log::error("FontLoader: Could not enumerate '{}': {}", FONT_DIRECTORY, error.message());
     }
 
-    const auto futuraFonts = SwfFontReader::LoadRegularFuturaFonts();
+    const auto embeddedFonts = SwfFontReader::LoadMenuFonts();
     const auto primaryName = NormalizeFontName(Config::PrimaryFont);
     const auto primaryFile = std::ranges::find_if(
         fontFiles, [&](const auto& path) { return NormalizeFontName(path.filename().string()) == primaryName; });
     const auto primaryEmbedded = std::ranges::find_if(
-        futuraFonts, [&](const auto& fontData) { return EmbeddedFontMatches(fontData, primaryName); });
-    const auto englishDefault = std::ranges::find_if(
-        futuraFonts, [](const auto& fontData) { return NormalizeFontName(fontData.sourceName) == "fonts_en.swf"; });
+        embeddedFonts, [&](const auto& fontData) { return EmbeddedFontMatches(fontData, primaryName); });
+    const auto englishDefault =
+        std::ranges::find_if(embeddedFonts, [](const auto& fontData) { return fontData.isVanillaFallback; });
 
     const SwfFontReader::FontData* selectedEmbedded = nullptr;
     std::filesystem::path selectedFile;
@@ -246,7 +249,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         result.defaultFont = GetFont(io, result.defaultFontName, GetFontSize(*primaryFile, size), &font_config,
                                      persistentGlyphRanges.at(size).Data);
         RegisterFont(result, *primaryFile, result.defaultFont);
-    } else if (primaryEmbedded != futuraFonts.end()) {
+    } else if (primaryEmbedded != embeddedFonts.end()) {
         selectedEmbedded = &*primaryEmbedded;
         result.defaultFontName = primaryEmbedded->name;
         result.defaultFont =
@@ -255,7 +258,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
     }
 
     if (!result.defaultFont) {
-        if (englishDefault != futuraFonts.end()) {
+        if (englishDefault != embeddedFonts.end()) {
             SKSE::log::warn("Primary font '{}' failed to load. Falling back to '{}' from Interface\\{}.",
                             Config::PrimaryFont, englishDefault->name, englishDefault->sourceName);
             selectedEmbedded = &*englishDefault;
@@ -289,7 +292,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         merge_config.OversampleV = 1;
     }
 
-    if (englishDefault != futuraFonts.end() && selectedEmbedded != &*englishDefault) {
+    if (englishDefault != embeddedFonts.end() && selectedEmbedded != &*englishDefault) {
         AddEmbeddedFont(io, *englishDefault, size, &merge_config, io.Fonts->GetGlyphRangesDefault());
     }
 
@@ -313,7 +316,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         return nullptr;
     };
 
-    for (const auto& fontData : futuraFonts) {
+    for (const auto& fontData : embeddedFonts) {
         if (result.fonts.contains(NormalizeFontName(fontData.name))) {
             continue;
         }

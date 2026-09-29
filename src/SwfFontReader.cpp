@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
@@ -12,7 +13,6 @@
 #include <map>
 #include <numeric>
 #include <optional>
-#include <set>
 #include <span>
 #include <stdexcept>
 #include <string_view>
@@ -20,6 +20,7 @@
 #include <tuple>
 #include <utility>
 
+#include "FontConfigReader.h"
 #include "PCH.h"
 
 // The SWF outline conversion follows the DefineFont2/DefineFont3 and quadratic
@@ -242,15 +243,17 @@ namespace SwfFontReader {
             return bits.BytePosition();
         }
 
-        std::optional<std::vector<std::uint8_t>> ReadGameResource(const std::string& filename) {
-            const auto resourcePath = std::format("Interface\\{}", filename);
+        std::optional<std::vector<std::uint8_t>> ReadGameResource(const std::string& filename,
+                                                                  std::uint32_t maximumSize = MAX_SWF_SIZE) {
+            auto resourcePath = std::format("Interface\\{}", filename);
+            std::ranges::replace(resourcePath, '/', '\\');
             RE::BSResourceNiBinaryStream stream(resourcePath);
             if (!stream.good() || !stream.stream) {
                 return std::nullopt;
             }
 
             const auto size = static_cast<std::size_t>(stream.stream->totalSize);
-            if (size < 8 || size > MAX_SWF_SIZE) {
+            if (size == 0 || size > maximumSize) {
                 logger::warn("SWF font reader: '{}' has invalid size {}.", resourcePath, size);
                 return std::nullopt;
             }
@@ -518,7 +521,8 @@ namespace SwfFontReader {
         }
 
         std::optional<ParsedFont> ParseFontTag(std::span<const std::uint8_t> data, std::uint16_t tagCode,
-                                               const std::string& sourceName) {
+                                               const std::string& sourceName,
+                                               const FontConfigReader::FontMapping* mapping) {
             ByteReader reader(data);
             ParsedFont font;
             font.id = reader.ReadU16();
@@ -535,10 +539,18 @@ namespace SwfFontReader {
             font.tagName = TrimNulls(std::string(reinterpret_cast<const char*>(nameBytes.data()), nameBytes.size()));
             font.sourceName = sourceName;
             const auto glyphCount = reader.ReadU16();
-            font.supplementalLanguage = GetSupplementalGlyphLanguage(sourceName, font.tagName, font.bold, font.italic);
-            if (!IsRegularFuturaCondensed(font.tagName, font.bold, font.italic) &&
-                font.supplementalLanguage == SupplementalGlyphLanguage::None) {
-                return std::nullopt;
+            if (mapping) {
+                if (ToLower(font.tagName) != ToLower(mapping->name) || font.bold != mapping->bold ||
+                    font.italic != mapping->italic) {
+                    return std::nullopt;
+                }
+            } else {
+                font.supplementalLanguage =
+                    GetSupplementalGlyphLanguage(sourceName, font.tagName, font.bold, font.italic);
+                if (!IsRegularFuturaCondensed(font.tagName, font.bold, font.italic) &&
+                    font.supplementalLanguage == SupplementalGlyphLanguage::None) {
+                    return std::nullopt;
+                }
             }
             const auto offsetBase = reader.Position();
 
@@ -1031,7 +1043,8 @@ namespace SwfFontReader {
             return result;
         }
 
-        std::vector<ParsedFont> ParseSwf(std::span<const std::uint8_t> file, const std::string& sourceName) {
+        std::vector<ParsedFont> ParseSwf(std::span<const std::uint8_t> file, const std::string& sourceName,
+                                         const FontConfigReader::FontMapping* mapping = nullptr) {
             const auto body = DecompressSwf(file, sourceName);
             ByteReader reader(body);
             reader.Skip(ReadRectSize(body));
@@ -1046,7 +1059,7 @@ namespace SwfFontReader {
                 const auto tagData = reader.ReadBytes(tagLength);
 
                 if (tagCode == DEFINE_FONT_2 || tagCode == DEFINE_FONT_3) {
-                    auto font = ParseFontTag(tagData, tagCode, sourceName);
+                    auto font = ParseFontTag(tagData, tagCode, sourceName, mapping);
                     if (font) {
                         fonts.push_back(std::move(*font));
                     }
@@ -1063,113 +1076,214 @@ namespace SwfFontReader {
             return fonts;
         }
 
-        std::vector<std::string> GetFontResourceNames() {
-            // The canonical files cover archive-backed vanilla/AE resources. Loose
-            // fonts_*.swf files are added below so font mods can contribute faces.
-            std::set<std::string> names = {"fonts_en.swf", "fonts_cn.swf", "fonts_ja.swf", "fonts_pl.swf",
-                                           "fonts_ru.swf"};
-
-            std::error_code error;
-            const std::filesystem::path interfaceDirectory = "Data/Interface";
-            for (std::filesystem::directory_iterator iterator(interfaceDirectory, error), end;
-                 !error && iterator != end; iterator.increment(error)) {
-                if (!iterator->is_regular_file(error)) {
-                    continue;
-                }
-                const auto filename = iterator->path().filename().string();
-                const auto normalized = ToLower(filename);
-                if (normalized.starts_with("fonts_") && normalized.ends_with(".swf")) {
-                    names.insert(filename);
-                }
-            }
-            if (error && error != std::errc::no_such_file_or_directory) {
-                logger::warn("SWF font reader: Could not enumerate '{}': {}.", interfaceDirectory.string(),
-                             error.message());
-            }
-
-            std::vector<std::string> result(names.begin(), names.end());
-            std::ranges::stable_sort(result, [](const std::string& left, const std::string& right) {
-                const auto leftName = ToLower(left);
-                const auto rightName = ToLower(right);
-                return std::tuple(leftName != "fonts_en.swf", leftName) <
-                       std::tuple(rightName != "fonts_en.swf", rightName);
-            });
-            return result;
-        }
-    }
-
-    std::vector<FontData> LoadRegularFuturaFonts() {
-        std::vector<FontData> result;
-        std::set<std::string> registeredNames;
-        for (const auto& resourceName : GetFontResourceNames()) {
+        std::optional<FontData> LoadFallbackFont(const std::string& resourceName) {
             const auto file = ReadGameResource(resourceName);
-            if (!file) {
-                continue;
-            }
+            if (!file) return std::nullopt;
 
             try {
                 auto parsedFonts = ParseSwf(*file, resourceName);
-                const auto supplemental = std::ranges::find_if(parsedFonts, [](const ParsedFont& font) {
-                    return font.supplementalLanguage != SupplementalGlyphLanguage::None;
+                const auto regular = std::ranges::find_if(parsedFonts, [](const ParsedFont& font) {
+                    return IsRegularFuturaCondensed(font.tagName, font.bold, font.italic);
                 });
-                std::string supplementalName;
-                SupplementalGlyphLanguage supplementalLanguage = SupplementalGlyphLanguage::None;
-                std::vector<std::uint8_t> supplementalTrueTypeData;
+                if (regular == parsedFonts.end()) return std::nullopt;
+
+                FontData font;
+                font.name = regular->fullName;
+                font.sourceName = resourceName;
+                font.aliases = {regular->tagName};
+                font.trueTypeData = BuildTrueType(std::move(*regular));
+                font.isVanillaFallback = ToLower(resourceName) == "fonts_en.swf";
+                if (font.trueTypeData.empty()) {
+                    throw ParseError("regular Futura face contains no usable glyphs");
+                }
+
+                const auto supplemental = std::ranges::find_if(parsedFonts, [](const ParsedFont& parsed) {
+                    return parsed.supplementalLanguage != SupplementalGlyphLanguage::None;
+                });
                 if (supplemental != parsedFonts.end()) {
-                    supplementalName = supplemental->tagName;
-                    supplementalLanguage = supplemental->supplementalLanguage;
-                    supplementalTrueTypeData = BuildTrueType(std::move(*supplemental));
-                    if (supplementalTrueTypeData.empty()) {
+                    font.supplementalName = supplemental->tagName;
+                    font.supplementalLanguage = supplemental->supplementalLanguage;
+                    font.supplementalTrueTypeData = BuildTrueType(std::move(*supplemental));
+                    if (font.supplementalTrueTypeData.empty()) {
                         logger::warn("SWF font reader: Supplemental face '{}' in '{}' contains no usable glyphs.",
-                                     supplementalName, resourceName);
-                        supplementalLanguage = SupplementalGlyphLanguage::None;
+                                     font.supplementalName, resourceName);
+                        font.supplementalLanguage = SupplementalGlyphLanguage::None;
                     }
                 }
-
-                std::size_t added = 0;
-                for (auto& parsed : parsedFonts) {
-                    if (!IsRegularFuturaCondensed(parsed.tagName, parsed.bold, parsed.italic)) {
-                        continue;
-                    }
-                    const auto displayName = !parsed.fullName.empty() ? parsed.fullName : parsed.tagName;
-                    const auto normalizedName = ToLower(displayName);
-                    if (displayName.empty() || registeredNames.contains(normalizedName)) {
-                        continue;
-                    }
-
-                    auto trueTypeData = BuildTrueType(parsed);
-                    if (trueTypeData.empty()) {
-                        logger::warn("SWF font reader: '{}' in '{}' contains no usable glyphs.", displayName,
-                                     resourceName);
-                        continue;
-                    }
-
-                    FontData font;
-                    font.name = displayName;
-                    font.sourceName = resourceName;
-                    font.bold = parsed.bold;
-                    font.italic = parsed.italic;
-                    font.trueTypeData = std::move(trueTypeData);
-                    font.supplementalName = supplementalName;
-                    font.supplementalLanguage = supplementalLanguage;
-                    font.supplementalTrueTypeData = std::move(supplementalTrueTypeData);
-                    font.aliases.push_back(displayName);
-                    if (!parsed.tagName.empty() && ToLower(parsed.tagName) != normalizedName) {
-                        font.aliases.push_back(parsed.tagName);
-                    }
-                    result.push_back(std::move(font));
-                    registeredNames.insert(normalizedName);
-                    ++added;
-                }
-                if (supplementalLanguage != SupplementalGlyphLanguage::None) {
-                    logger::info("SWF font reader: Attached supplemental face '{}' from Interface\\{}.",
-                                 supplementalName, resourceName);
-                }
-                logger::info("SWF font reader: Loaded {} faces from Interface\\{}.", added, resourceName);
+                logger::info("SWF font reader: Loaded fallback '{}' from Interface\\{}.", font.name, resourceName);
+                return font;
             } catch (const std::exception& exception) {
                 logger::error("SWF font reader: Could not parse Interface\\{}: {}", resourceName, exception.what());
+                return std::nullopt;
             }
         }
-        return result;
+
+        // Cache only converted, requested faces. In particular, do not convert
+        // every CJK face in a library just to find the configured regular face.
+        using FaceKey = std::tuple<std::string, std::string, bool, bool>;
+        using FaceCache = std::map<FaceKey, std::optional<FontData>>;
+
+        const std::optional<FontData>& LoadMappedFace(const std::string& library,
+                                                      const FontConfigReader::FontMapping& mapping, FaceCache& cache) {
+            const FaceKey key{ToLower(library), ToLower(mapping.name), mapping.bold, mapping.italic};
+            const auto [entry, inserted] = cache.try_emplace(key);
+            if (!inserted) return entry->second;
+
+            const auto file = ReadGameResource(library);
+            if (!file) {
+                logger::warn("SWF font reader: Could not read configured library Interface\\{}.", library);
+                return entry->second;
+            }
+            try {
+                auto parsedFonts = ParseSwf(*file, library, &mapping);
+                if (!parsedFonts.empty()) {
+                    auto& parsed = parsedFonts.front();
+                    FontData font;
+                    font.name = parsed.tagName;
+                    font.sourceName = library;
+                    font.bold = parsed.bold;
+                    font.italic = parsed.italic;
+                    font.isVanillaFallback = ToLower(library) == "fonts_en.swf" &&
+                                             IsRegularFuturaCondensed(parsed.tagName, parsed.bold, parsed.italic);
+                    font.trueTypeData = BuildTrueType(std::move(parsed));
+                    if (font.trueTypeData.empty()) throw ParseError("configured face contains no usable glyphs");
+                    entry->second = std::move(font);
+                }
+            } catch (const std::exception& exception) {
+                logger::error("SWF font reader: Could not load '{}' from Interface\\{}: {}", mapping.name, library,
+                              exception.what());
+            }
+            return entry->second;
+        }
+
+        const FontData* LoadFuturaFace(const std::string& resourceName, FaceCache& cache) {
+            for (const auto name : {"Futura Condensed", "Futura Condensed test"}) {
+                const auto& font = LoadMappedFace(resourceName, FontConfigReader::FontMapping{name}, cache);
+                if (font) return &*font;
+            }
+            return nullptr;
+        }
+
+        std::optional<FontData> LoadConfiguredFont(const std::string& configName, const std::string& resourceName,
+                                                  const std::string& language, FaceCache& cache) {
+            constexpr std::uint32_t MAX_CONFIG_SIZE = 4 * 1024 * 1024;
+            const auto file = ReadGameResource(configName, MAX_CONFIG_SIZE);
+            if (!file) {
+                logger::info("SWF font reader: Interface\\{} is unavailable; trying vanilla fonts.", configName);
+                return std::nullopt;
+            }
+            try {
+                const auto config = FontConfigReader::Parse(
+                    std::string_view(reinterpret_cast<const char*>(file->data()), file->size()));
+                for (const auto& library : config.libraries) {
+                    const auto& mapped = LoadMappedFace(library, config.menuFont, cache);
+                    if (!mapped) continue;
+
+                    const auto style = mapped->bold && mapped->italic ? " Bold Italic"
+                                       : mapped->bold                ? " Bold"
+                                       : mapped->italic              ? " Italic"
+                                                                     : "";
+                    const FontData* base = &*mapped;
+                    if (!IsRegularFuturaCondensed(mapped->name, mapped->bold, mapped->italic)) {
+                        base = LoadFuturaFace(resourceName, cache);
+                        if (!base && ToLower(resourceName) != "fonts_en.swf") {
+                            base = LoadFuturaFace("fonts_en.swf", cache);
+                        }
+                        if (!base) {
+                            logger::warn(
+                                "SWF font reader: Could not find regular Futura for Interface\\{}; "
+                                "trying vanilla fonts.",
+                                configName);
+                            return std::nullopt;
+                        }
+                    }
+
+                    FontData font = *base;
+                    const auto legacyLanguage = language == "Default" ? "EN" : language;
+                    font.name = std::format("Futura Condensed ({})", legacyLanguage);
+                    font.isVanillaFallback = base->isVanillaFallback && legacyLanguage == "EN";
+                    // Accept names saved by the configuration-based loader while
+                    // retaining Futura's glyphs and metrics as the composite base.
+                    font.aliases = {std::format("{}{} ({})", mapped->name, style, language), mapped->name};
+                    if (language == "Default") font.aliases.push_back("Futura Condensed");
+                    if (base != &*mapped) {
+                        font.supplementalName = std::format("{}{}", mapped->name, style);
+                        font.supplementalTrueTypeData = mapped->trueTypeData;
+                        font.supplementalLanguage = language == "CN" ? SupplementalGlyphLanguage::Chinese
+                                                    : language == "JA" ? SupplementalGlyphLanguage::Japanese
+                                                                       : SupplementalGlyphLanguage::Configured;
+                        logger::info(
+                            "SWF font reader: '{}' uses Futura from Interface\\{} with supplemental '{}' from "
+                            "Interface\\{} ($StartMenuFont in Interface\\{}).",
+                            font.name, font.sourceName, font.supplementalName, library, configName);
+                    } else {
+                        logger::info("SWF font reader: Interface\\{} resolves '{}' to '{}' in Interface\\{}.",
+                                     configName, font.name, mapped->name, library);
+                    }
+                    return font;
+                }
+                logger::warn(
+                    "SWF font reader: Could not resolve $StartMenuFont '{}' (bold={}, italic={}) in "
+                    "Interface\\{}; trying vanilla fonts.",
+                    config.menuFont.name, config.menuFont.bold, config.menuFont.italic, configName);
+            } catch (const std::exception& exception) {
+                logger::warn("SWF font reader: Could not read Interface\\{}: {}; trying vanilla fonts.", configName,
+                             exception.what());
+            }
+            return std::nullopt;
+        }
+
+        std::map<std::string, std::string> GetFontConfigurations() {
+            // Canonical names cover archive-backed resources. Loose configurations
+            // and legacy fonts_*.swf resources can contribute additional languages.
+            std::map<std::string, std::string> configurations = {
+                {"fontconfig.txt", "fonts_en.swf"},    {"fontconfig_cn.txt", "fonts_cn.swf"},
+                {"fontconfig_ja.txt", "fonts_ja.swf"}, {"fontconfig_pl.txt", "fonts_pl.swf"},
+                {"fontconfig_ru.txt", "fonts_ru.swf"},
+            };
+            std::error_code error;
+            for (std::filesystem::directory_iterator iterator("Data/Interface", error), end; !error && iterator != end;
+                 iterator.increment(error)) {
+                if (!iterator->is_regular_file(error)) continue;
+                const auto filename = ToLower(iterator->path().filename().string());
+                if (filename.starts_with("fontconfig_") && filename.ends_with(".txt")) {
+                    const auto language = filename.substr(11, filename.size() - 15);
+                    if (!language.empty()) {
+                        configurations.try_emplace(filename, std::format("fonts_{}.swf", language));
+                    }
+                } else if (filename.starts_with("fonts_") && filename.ends_with(".swf")) {
+                    const auto language = ToLower(GetLanguageName(filename));
+                    if (!language.empty()) {
+                        const auto config =
+                            language == "en" ? "fontconfig.txt" : std::format("fontconfig_{}.txt", language);
+                        configurations.try_emplace(config, filename);
+                    }
+                }
+            }
+            if (error && error != std::errc::no_such_file_or_directory) {
+                logger::warn("SWF font reader: Could not enumerate font configurations: {}.", error.message());
+            }
+            return configurations;
+        }
+    }
+
+    std::vector<FontData> LoadMenuFonts() {
+        std::vector<FontData> fonts;
+        FaceCache cache;
+        // fontconfig.txt sorts first so ambiguous legacy face aliases continue
+        // to prefer the default configuration over localized choices.
+        for (const auto& [config, resource] : GetFontConfigurations()) {
+            const auto language = config == "fontconfig.txt" ? "Default" : GetLanguageName(resource);
+            auto font = LoadConfiguredFont(config, resource, language, cache);
+            if (!font) font = LoadFallbackFont(resource);
+            if (font) fonts.push_back(std::move(*font));
+        }
+
+        // Keep a genuine English fallback even when fontconfig.txt is localized.
+        if (std::ranges::none_of(fonts, &FontData::isVanillaFallback)) {
+            auto fallback = LoadFallbackFont("fonts_en.swf");
+            if (fallback) fonts.push_back(std::move(*fallback));
+        }
+        return fonts;
     }
 }

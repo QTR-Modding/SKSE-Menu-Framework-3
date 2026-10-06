@@ -8,9 +8,12 @@
 #include <deque>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <iterator>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <set>
+#include <vector>
 #include "Renderer.h"
 #include "Application.h"
 #include "SKSEMenuFramework.h"
@@ -35,7 +38,25 @@ namespace {
     constexpr auto FAVORITE_STAR = "\xEF\x80\x85";
     constexpr auto ARCHIVE_ICON = "\xEF\x86\x87";
     constexpr auto CATEGORY_ICON = "\xEF\x80\xAB";
+    constexpr auto ROOT_MENU_PAYLOAD = "SMF_ROOT_MENU";
     constexpr ImVec4 FAVORITE_STAR_COLOR = ImVec4(1.0f, 0.84f, 0.0f, 1.0f);
+
+    using RootMenuEntry = std::pair<const std::string, UI::MenuTree*>;
+
+    struct RootMenuDrop {
+        std::string MenuName;
+        std::string CategoryName;
+        std::string TargetMenuName;
+        bool PlaceAfter = false;
+    };
+
+    struct RootMenuDropPreview {
+        RootMenuDrop Placement;
+        ImRect HeaderBounds;
+        float InsertionY = 0.0f;
+    };
+
+    bool rootMenuMoveErrorRequested = false;
 
     struct MenuNodeLocation {
         UI::MenuTree* Parent = nullptr;
@@ -522,6 +543,216 @@ namespace {
         return ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
     }
 
+    std::vector<const RootMenuEntry*> GetOrderedRootMenus() {
+        const auto savedOrder = RootMenuConfig::GetMenuOrder();
+        std::map<std::string, std::size_t> positions;
+        for (std::size_t index = 0; index < savedOrder.size(); ++index) {
+            positions.emplace(savedOrder[index], index);
+        }
+
+        std::vector<const RootMenuEntry*> menus;
+        menus.reserve(UI::RootMenu->Children.size());
+        for (const auto& entry : UI::RootMenu->Children) {
+            menus.push_back(&entry);
+        }
+        std::sort(menus.begin(), menus.end(), [&](auto left, auto right) {
+            const auto leftPosition = positions.find(left->first);
+            const auto rightPosition = positions.find(right->first);
+            const auto leftIndex = leftPosition == positions.end() ? savedOrder.size() : leftPosition->second;
+            const auto rightIndex = rightPosition == positions.end() ? savedOrder.size() : rightPosition->second;
+            if (leftIndex != rightIndex) {
+                return leftIndex < rightIndex;
+            }
+            const bool leftFavorite = RootMenuConfig::IsFavorite(left->first);
+            const bool rightFavorite = RootMenuConfig::IsFavorite(right->first);
+            if (leftFavorite != rightFavorite) {
+                return leftFavorite;
+            }
+            return left->first < right->first;
+        });
+        return menus;
+    }
+
+    std::optional<std::string> GetDraggedRootMenuName() {
+        const auto payload = ImGui::GetDragDropPayload();
+        if (!payload || !payload->IsDataType(ROOT_MENU_PAYLOAD) || !payload->Data || payload->DataSize <= 1) {
+            return std::nullopt;
+        }
+        const auto nameData = static_cast<const char*>(payload->Data);
+        if (nameData[payload->DataSize - 1] != '\0') {
+            return std::nullopt;
+        }
+        const std::string name(nameData, static_cast<std::size_t>(payload->DataSize - 1));
+        if (!UI::RootMenu->Children.contains(name) || RootMenuConfig::IsArchived(name)) {
+            return std::nullopt;
+        }
+        return name;
+    }
+
+    void RenderRootMenuDragSource(const std::string& menuName) {
+        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAutoExpirePayload)) {
+            ImGui::SetDragDropPayload(ROOT_MENU_PAYLOAD, menuName.c_str(), menuName.size() + 1);
+            ImGui::TextUnformatted(menuName.c_str());
+            ImGui::TextUnformatted(Translations::Get("Menu.Reorder"));
+            ImGui::EndDragDropSource();
+        }
+    }
+
+    std::optional<RootMenuDropPreview> RenderRootMenuDropTarget(const std::string& categoryName,
+        const std::string& targetMenuName, std::optional<RootMenuDrop>& pendingDrop) {
+        const auto draggedMenuName = GetDraggedRootMenuName();
+        if (!draggedMenuName || *draggedMenuName == targetMenuName) {
+            return std::nullopt;
+        }
+
+        const auto headerMin = ImGui::GetItemRectMin();
+        const auto headerMax = ImGui::GetItemRectMax();
+        ImRect targetRect(headerMin, headerMax);
+        const bool categoryHeading = targetMenuName.empty();
+        const float midpoint = (headerMin.y + headerMax.y) * 0.5f;
+        const bool placeAfter = !categoryHeading && ImGui::GetIO().MousePos.y >= midpoint;
+        if (!categoryHeading) {
+            if (placeAfter) {
+                targetRect.Min.y = midpoint;
+            } else {
+                targetRect.Max.y = midpoint;
+            }
+        }
+        const auto targetID = ImHashStr(categoryHeading ? "DropAppend" : (placeAfter ? "DropAfter" : "DropBefore"),
+            0, ImGui::GetItemID());
+        if (!ImGui::BeginDragDropTargetCustom(targetRect, targetID)) {
+            return std::nullopt;
+        }
+
+        std::optional<RootMenuDropPreview> preview;
+        const auto payload = ImGui::AcceptDragDropPayload(ROOT_MENU_PAYLOAD,
+            ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
+        if (payload) {
+            const float halfSpacing = ImGui::GetStyle().ItemSpacing.y * 0.5f;
+            const float insertionY = categoryHeading || placeAfter ? headerMax.y + halfSpacing :
+                headerMin.y - halfSpacing;
+            preview = RootMenuDropPreview{
+                RootMenuDrop{*draggedMenuName, categoryName, targetMenuName, placeAfter},
+                ImRect(headerMin, headerMax), insertionY};
+            if (payload->IsDelivery()) {
+                pendingDrop = preview->Placement;
+            }
+        }
+        ImGui::EndDragDropTarget();
+        return preview;
+    }
+
+    void RenderRootMenuDropIndicator(const RootMenuDropPreview& preview) {
+        const auto drawList = ImGui::GetWindowDrawList();
+        auto accent = ImGui::GetStyleColorVec4(ImGuiCol_DragDropTarget);
+        accent.w = 1.0f;
+        const auto color = ImGui::GetColorU32(accent);
+        const auto backing = ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.85f));
+        const float thickness = ImMax(3.0f, ImGui::GetFontSize() * 0.15f);
+        const float endcapRadius = thickness;
+        const bool categoryHeading = preview.Placement.TargetMenuName.empty();
+        if (categoryHeading) {
+            drawList->AddRect(preview.HeaderBounds.Min, preview.HeaderBounds.Max,
+                backing, 0.0f, 0, thickness + 2.0f);
+            drawList->AddRect(preview.HeaderBounds.Min, preview.HeaderBounds.Max, color, 0.0f, 0, thickness);
+        }
+        const float indent = categoryHeading ? ImGui::GetStyle().IndentSpacing : 0.0f;
+        const ImVec2 lineMin(preview.HeaderBounds.Min.x + indent + endcapRadius, preview.InsertionY);
+        const ImVec2 lineMax(preview.HeaderBounds.Max.x - endcapRadius, preview.InsertionY);
+        if (lineMax.x > lineMin.x) {
+            drawList->AddLine(lineMin, lineMax, backing, thickness + 2.0f);
+            drawList->AddLine(lineMin, lineMax, color, thickness);
+            for (const auto endpoint : {lineMin, lineMax}) {
+                drawList->AddCircleFilled(endpoint, endcapRadius + 1.0f, backing);
+                drawList->AddCircleFilled(endpoint, endcapRadius, color);
+            }
+        }
+
+        const auto destination = categoryHeading ?
+            (preview.Placement.CategoryName.empty() ? Translations::Get("Categories.Uncategorized") :
+                preview.Placement.CategoryName.c_str()) : preview.Placement.TargetMenuName.c_str();
+        const auto labelKey = categoryHeading ? "Menu.Reorder.End" :
+            (preview.Placement.PlaceAfter ? "Menu.Reorder.After" : "Menu.Reorder.Before");
+        ImGui::SetTooltip("%s\n%s %s", preview.Placement.MenuName.c_str(), Translations::Get(labelKey), destination);
+    }
+
+    bool ApplyRootMenuDrop(const RootMenuDrop& drop, const std::vector<const RootMenuEntry*>& rootMenus) {
+        if (!UI::RootMenu->Children.contains(drop.MenuName) || RootMenuConfig::IsArchived(drop.MenuName)) {
+            logger::warn("Could not move unavailable root menu '{}'.", drop.MenuName);
+            return false;
+        }
+        if (!drop.TargetMenuName.empty() &&
+            (!UI::RootMenu->Children.contains(drop.TargetMenuName) ||
+                RootMenuConfig::IsArchived(drop.TargetMenuName) ||
+                RootMenuConfig::GetCategory(drop.TargetMenuName) != drop.CategoryName)) {
+            logger::warn("Could not move root menu '{}': the target menu is no longer available.", drop.MenuName);
+            return false;
+        }
+
+        // Include hidden and unregistered menus so a filtered drag preserves their saved positions.
+        auto orderedMenus = RootMenuConfig::GetMenuOrder();
+        std::set<std::string> savedMenus(orderedMenus.begin(), orderedMenus.end());
+        for (const auto entry : rootMenus) {
+            if (savedMenus.insert(entry->first).second) {
+                orderedMenus.push_back(entry->first);
+            }
+        }
+        std::erase(orderedMenus, drop.MenuName);
+        auto insertion = orderedMenus.end();
+        if (!drop.TargetMenuName.empty()) {
+            insertion = std::find(orderedMenus.begin(), orderedMenus.end(), drop.TargetMenuName);
+            if (drop.PlaceAfter && insertion != orderedMenus.end()) {
+                ++insertion;
+            }
+        } else {
+            for (auto menu = orderedMenus.begin(); menu != orderedMenus.end(); ++menu) {
+                if (RootMenuConfig::GetCategory(*menu) == drop.CategoryName) {
+                    insertion = std::next(menu);
+                }
+            }
+        }
+        orderedMenus.insert(insertion, drop.MenuName);
+        return RootMenuConfig::SetMenuPlacement(drop.MenuName, drop.CategoryName, orderedMenus);
+    }
+
+    void ScrollRootMenusWhileDragging() {
+        if (!GetDraggedRootMenuName() ||
+            !ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
+            return;
+        }
+        const auto window = ImGui::GetCurrentWindow();
+        const float edgeSize = ImGui::GetFrameHeight() * 1.5f;
+        const float mouseY = ImGui::GetIO().MousePos.y;
+        float direction = 0.0f;
+        if (mouseY < window->InnerRect.Min.y + edgeSize) {
+            direction = -1.0f;
+        } else if (mouseY > window->InnerRect.Max.y - edgeSize) {
+            direction = 1.0f;
+        }
+        if (direction != 0.0f) {
+            const float distance = direction * ImGui::GetFontSize() * 20.0f * ImGui::GetIO().DeltaTime;
+            ImGui::SetScrollY(ImClamp(ImGui::GetScrollY() + distance, 0.0f, ImGui::GetScrollMaxY()));
+        }
+    }
+
+    void RenderRootMenuMoveError() {
+        const auto title = std::format("{}###RootMenuMoveError", Translations::Get("Menu.Reorder.Error.Title"));
+        if (rootMenuMoveErrorRequested) {
+            ImGui::OpenPopup(title.c_str());
+            rootMenuMoveErrorRequested = false;
+        }
+        const auto viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSizeConstraints(ImVec2{}, viewport->WorkSize * 0.85f);
+        if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("%s", Translations::Get("Menu.Reorder.Error.Save"));
+            if (ImGui::Button(Translations::Get("Categories.Close")) || CategoryCancelPressed()) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
     // Hash category names as data so "##" and "###" remain ordinary name characters.
     void PushCategoryID(const std::string& name) {
         ImGui::PushID(static_cast<int>(ImHashData(name.data(), name.size())));
@@ -538,19 +769,26 @@ namespace {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
         const bool open = ImGui::TreeNodeEx("Group",
             ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen, "%s", label);
+        const auto headingItem = GImGui->LastItemData;
         ImGui::PopStyleVar();
         ImGui::PopStyleColor(4);
         const auto nextPosition = ImGui::GetCursorScreenPos();
 
-        // Keep the tree's interaction and state, and draw its heading as a plain separator.
-        ImGui::SetCursorScreenPos(headingPosition);
+        // Keep the tree's interaction and state, and reserve space beside the separator for its caret.
+        const float caretWidth = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.x;
+        ImGui::SetCursorScreenPos(ImVec2(headingPosition.x + caretWidth, headingPosition.y));
         ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextBorderSize, 1.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextAlign, ImVec2(0.0f, 0.5f));
         ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextPadding,
-            ImVec2(ImGui::GetStyle().ItemSpacing.x + ImGui::GetFontSize() * 0.35f, ImGui::GetStyle().FramePadding.y));
+            ImVec2(ImGui::GetStyle().ItemSpacing.x, ImGui::GetStyle().FramePadding.y));
         ImGui::SeparatorTextEx(0, label, label + std::strlen(label), 0.0f);
         ImGui::PopStyleVar(3);
+        const ImVec2 caretPosition(headingPosition.x + ImGui::GetStyle().FramePadding.x,
+            (headingItem.Rect.Min.y + headingItem.Rect.Max.y - ImGui::GetFontSize()) * 0.5f);
+        ImGui::RenderArrow(ImGui::GetWindowDrawList(), caretPosition, ImGui::GetColorU32(ImGuiCol_Text),
+            open ? ImGuiDir_Down : ImGuiDir_Right);
         ImGui::SetCursorScreenPos(nextPosition);
+        GImGui->LastItemData = headingItem;
         return open;
     }
 
@@ -1067,22 +1305,18 @@ void __stdcall UI::RenderMenuWindow() {
                       ImGuiChildFlags_Border);
     GamepadNavigation::BeginArea(GamepadNavigation::Area::PageTree);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 5.0f));
-    using RootMenuEntry = std::pair<const std::string, UI::MenuTree*>;
-    std::vector<const RootMenuEntry*> rootMenus;
-    rootMenus.reserve(RootMenu->Children.size());
-    for (const auto& item : RootMenu->Children) {
-        rootMenus.push_back(&item);
+    const auto dragPayload = ImGui::GetDragDropPayload();
+    if (dragPayload && dragPayload->IsDataType(ROOT_MENU_PAYLOAD) &&
+        (ImGui::IsKeyPressed(ImGuiKey_Escape, false) || !GetDraggedRootMenuName())) {
+        ImGui::ClearDragDrop();
+        ImGui::ClearActiveID();
     }
-    std::stable_sort(rootMenus.begin(), rootMenus.end(), [](auto left, auto right) {
-        const bool leftFavorite = RootMenuConfig::IsFavorite(left->first);
-        const bool rightFavorite = RootMenuConfig::IsFavorite(right->first);
-        if (leftFavorite != rightFavorite) {
-            return leftFavorite;
-        }
-        return left->first < right->first;
-    });
+    const auto rootMenus = GetOrderedRootMenus();
+    std::optional<RootMenuDrop> pendingDrop;
+    std::optional<RootMenuDropPreview> dropPreview;
 
     std::map<std::string, std::vector<const RootMenuEntry*>> categoryMenus;
+    categoryMenus.try_emplace(std::string{});
     for (const auto& name : RootMenuConfig::GetCategories()) {
         categoryMenus.try_emplace(name);
     }
@@ -1103,7 +1337,7 @@ void __stdcall UI::RenderMenuWindow() {
     categoryToOpen.reset();
     // Uncategorized follows the named groups; map order keeps names alphabetical.
     auto renderCategory = [&](const std::string& name, const std::vector<const RootMenuEntry*>& menus) {
-        if (menus.empty() && filter.IsActive()) {
+        if (menus.empty() && filter.IsActive() && !GetDraggedRootMenuName()) {
             return;
         }
         ImGui::PushID("MenuCategory");
@@ -1113,9 +1347,13 @@ void __stdcall UI::RenderMenuWindow() {
         }
         const auto label = name.empty() ? Translations::Get("Categories.Uncategorized") : name.c_str();
         const bool categoryOpen = RenderCategoryHeading(label);
+        auto categoryPreview = RenderRootMenuDropTarget(name, {}, pendingDrop);
         ImGui::PopID();
         ImGui::PopID();
         if (!categoryOpen) {
+            if (categoryPreview) {
+                dropPreview = categoryPreview;
+            }
             return;
         }
         // Indent without pushing a category ID: a moved mod keeps its widget state.
@@ -1134,6 +1372,8 @@ void __stdcall UI::RenderMenuWindow() {
             if (textMax.x > textMin.x) {
                 ImGui::RenderTextClipped(textMin, textMax, item.first.c_str(), item.first.c_str() + item.first.size(), nullptr);
             }
+            RenderRootMenuDragSource(item.first);
+            auto menuPreview = RenderRootMenuDropTarget(name, item.first, pendingDrop);
             RenderRootMenuButtons(item.first, item.second, favorite);
             if (!RootMenuConfig::IsArchived(item.first) && headerOpen) {
                 for (auto node : item.second->SortedChildren) {
@@ -1144,8 +1384,22 @@ void __stdcall UI::RenderMenuWindow() {
                     DummyRenderer(node);
                 }
             }
+            if (menuPreview) {
+                if (menuPreview->Placement.PlaceAfter) {
+                    const float halfSpacing = ImGui::GetStyle().ItemSpacing.y * 0.5f;
+                    menuPreview->InsertionY = ImMax(menuPreview->InsertionY,
+                        ImGui::GetCursorScreenPos().y - halfSpacing);
+                }
+                dropPreview = menuPreview;
+            }
         }
         ImGui::Unindent();
+        if (categoryPreview) {
+            const float halfSpacing = ImGui::GetStyle().ItemSpacing.y * 0.5f;
+            categoryPreview->InsertionY = ImMax(categoryPreview->InsertionY,
+                ImGui::GetCursorScreenPos().y - halfSpacing);
+            dropPreview = categoryPreview;
+        }
     };
     for (const auto& [name, menus] : categoryMenus) {
         if (!name.empty()) {
@@ -1154,6 +1408,17 @@ void __stdcall UI::RenderMenuWindow() {
     }
     if (const auto uncategorized = categoryMenus.find(std::string{}); uncategorized != categoryMenus.end()) {
         renderCategory(uncategorized->first, uncategorized->second);
+    }
+    if (dropPreview) {
+        RenderRootMenuDropIndicator(*dropPreview);
+    }
+    ScrollRootMenusWhileDragging();
+    if (pendingDrop) {
+        if (ApplyRootMenuDrop(*pendingDrop, rootMenus)) {
+            categoryToOpen = pendingDrop->CategoryName;
+        } else {
+            rootMenuMoveErrorRequested = true;
+        }
     }
     ImGui::PopStyleVar();
     GamepadNavigation::EndArea();
@@ -1174,6 +1439,7 @@ void __stdcall UI::RenderMenuWindow() {
 
     RenderArchiveConfirmation();
     RenderCategoryDialogs();
+    RenderRootMenuMoveError();
 
     GamepadNavigation::RenderFocusedItemHighlight();
     GamepadNavigation::PopFocusStyle();

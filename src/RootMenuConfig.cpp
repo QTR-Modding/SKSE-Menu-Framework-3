@@ -15,6 +15,7 @@
 #include <map>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -26,6 +27,7 @@ namespace {
     std::set<std::string> archivedMenus;
     std::set<std::string> categories;
     std::map<std::string, std::string> menuCategories;
+    std::vector<std::string> menuOrder;
 
     std::optional<std::string> ValidateCategoryName(std::string_view name) {
         auto normalizedName = RootMenuConfig::NormalizeCategoryName(name);
@@ -110,6 +112,31 @@ namespace {
         }
     }
 
+    void LoadMenuOrder(const nlohmann::json& config) {
+        if (!config.contains("menuOrder")) {
+            return;
+        }
+        if (!config["menuOrder"].is_array()) {
+            logger::warn("Ignoring root menu configuration field 'menuOrder': expected an array.");
+            return;
+        }
+
+        std::set<std::string> seenMenus;
+        for (const auto& value : config["menuOrder"]) {
+            if (!value.is_string() || value.get_ref<const std::string&>().empty()) {
+                logger::warn("Ignoring invalid menu name in root menu configuration field 'menuOrder': {}.", value.dump());
+                continue;
+            }
+
+            const auto menuName = value.get<std::string>();
+            if (!seenMenus.insert(menuName).second) {
+                logger::warn("Ignoring duplicate menu '{}' in root menu configuration field 'menuOrder'.", menuName);
+                continue;
+            }
+            menuOrder.push_back(menuName);
+        }
+    }
+
     void RemoveTemporaryFile(const wchar_t* path) {
         if (path[0] == L'\0' || DeleteFileW(path)) {
             return;
@@ -122,7 +149,8 @@ namespace {
     }
 
     bool Save(const std::set<std::string>& savedCategories,
-              const std::map<std::string, std::string>& savedMenuCategories) {
+              const std::map<std::string, std::string>& savedMenuCategories,
+              const std::vector<std::string>& savedMenuOrder) {
         std::array<wchar_t, MAX_PATH> temporaryPath{};
         try {
             const nlohmann::json config = {
@@ -130,6 +158,7 @@ namespace {
                 {"archived", archivedMenus},
                 {"categories", savedCategories},
                 {"menuCategories", savedMenuCategories},
+                {"menuOrder", savedMenuOrder},
             };
             const auto contents = config.dump(2) + '\n';
             const std::filesystem::path configPath(CONFIG_PATH);
@@ -170,7 +199,7 @@ namespace {
     }
 
     bool Save() {
-        return Save(categories, menuCategories);
+        return Save(categories, menuCategories, menuOrder);
     }
 
     void SetMenuState(std::set<std::string>& menuNames, const std::string& menuName, bool enabled) {
@@ -190,6 +219,7 @@ void RootMenuConfig::Load() {
     archivedMenus.clear();
     categories.clear();
     menuCategories.clear();
+    menuOrder.clear();
 
     std::ifstream file(CONFIG_PATH);
     if (!file.good()) {
@@ -208,6 +238,7 @@ void RootMenuConfig::Load() {
         LoadMenuNames(config, "hidden", archivedMenus);
         LoadCategories(config);
         LoadMenuCategories(config);
+        LoadMenuOrder(config);
     } catch (const std::exception& exception) {
         logger::error("Could not read root menu configuration '{}': {}", CONFIG_PATH, exception.what());
     }
@@ -265,7 +296,7 @@ bool RootMenuConfig::CreateCategory(const std::string& name, const std::string& 
     if (!menuName.empty()) {
         updatedMenuCategories[menuName] = *categoryName;
     }
-    if (!Save(updatedCategories, updatedMenuCategories)) {
+    if (!Save(updatedCategories, updatedMenuCategories, menuOrder)) {
         return false;
     }
     categories.swap(updatedCategories);
@@ -295,7 +326,7 @@ bool RootMenuConfig::RenameCategory(const std::string& oldName, const std::strin
             assignment.second = *newCategoryName;
         }
     }
-    if (!Save(updatedCategories, updatedMenuCategories)) {
+    if (!Save(updatedCategories, updatedMenuCategories, menuOrder)) {
         return false;
     }
     categories.swap(updatedCategories);
@@ -314,7 +345,7 @@ bool RootMenuConfig::RemoveCategory(const std::string& name) {
     std::erase_if(updatedMenuCategories, [&name](const auto& assignment) {
         return assignment.second == name;
     });
-    if (!Save(updatedCategories, updatedMenuCategories)) {
+    if (!Save(updatedCategories, updatedMenuCategories, menuOrder)) {
         return false;
     }
     categories.swap(updatedCategories);
@@ -345,10 +376,57 @@ bool RootMenuConfig::SetCategory(const std::string& menuName, const std::string&
     } else {
         updatedMenuCategories[menuName] = normalizedCategory;
     }
-    if (!Save(categories, updatedMenuCategories)) {
+    if (!Save(categories, updatedMenuCategories, menuOrder)) {
         return false;
     }
     menuCategories.swap(updatedMenuCategories);
+    return true;
+}
+
+std::vector<std::string> RootMenuConfig::GetMenuOrder() {
+    return menuOrder;
+}
+
+bool RootMenuConfig::SetMenuPlacement(const std::string& menuName, const std::string& categoryName,
+                                    const std::vector<std::string>& orderedMenus) {
+    if (menuName.empty()) {
+        return false;
+    }
+
+    std::set<std::string> seenMenus;
+    for (const auto& name : orderedMenus) {
+        if (name.empty() || !seenMenus.insert(name).second) {
+            return false;
+        }
+    }
+    if (!seenMenus.contains(menuName)) {
+        return false;
+    }
+
+    std::string normalizedCategory;
+    if (!categoryName.empty()) {
+        const auto normalizedName = ValidateCategoryName(categoryName);
+        if (!normalizedName || !categories.contains(*normalizedName)) {
+            return false;
+        }
+        normalizedCategory = *normalizedName;
+    }
+    if (GetCategory(menuName) == normalizedCategory && menuOrder == orderedMenus) {
+        return true;
+    }
+
+    auto updatedMenuCategories = menuCategories;
+    if (normalizedCategory.empty()) {
+        updatedMenuCategories.erase(menuName);
+    } else {
+        updatedMenuCategories[menuName] = normalizedCategory;
+    }
+    auto updatedMenuOrder = orderedMenus;
+    if (!Save(categories, updatedMenuCategories, updatedMenuOrder)) {
+        return false;
+    }
+    menuCategories.swap(updatedMenuCategories);
+    menuOrder.swap(updatedMenuOrder);
     return true;
 }
 
@@ -372,6 +450,11 @@ void RootMenuConfig::RenameMenu(const std::string& oldName, const std::string& n
         menuCategories.erase(assignment);
         changed = true;
     }
+    if (std::find(menuOrder.begin(), menuOrder.end(), oldName) != menuOrder.end()) {
+        std::erase(menuOrder, newName);
+        std::replace(menuOrder.begin(), menuOrder.end(), oldName, newName);
+        changed = true;
+    }
     if (changed) {
         Save();
     }
@@ -381,7 +464,8 @@ void RootMenuConfig::RemoveMenu(const std::string& menuName) {
     const bool favoriteRemoved = favoriteMenus.erase(menuName) > 0;
     const bool archivedRemoved = archivedMenus.erase(menuName) > 0;
     const bool categoryRemoved = menuCategories.erase(menuName) > 0;
-    if (favoriteRemoved || archivedRemoved || categoryRemoved) {
+    const bool orderRemoved = std::erase(menuOrder, menuName) > 0;
+    if (favoriteRemoved || archivedRemoved || categoryRemoved || orderRemoved) {
         Save();
     }
 }

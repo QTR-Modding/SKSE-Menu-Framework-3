@@ -4,9 +4,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <deque>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <mutex>
+#include <optional>
 #include <set>
 #include "Renderer.h"
 #include "Application.h"
@@ -31,6 +34,7 @@ static int selection_mask = (1 << 2);
 namespace {
     constexpr auto FAVORITE_STAR = "\xEF\x80\x85";
     constexpr auto ARCHIVE_ICON = "\xEF\x86\x87";
+    constexpr auto CATEGORY_ICON = "\xEF\x80\xAB";
     constexpr ImVec4 FAVORITE_STAR_COLOR = ImVec4(1.0f, 0.84f, 0.0f, 1.0f);
 
     struct MenuNodeLocation {
@@ -46,6 +50,24 @@ namespace {
     std::string pendingArchiveMenuName;
     UI::MenuTree* pendingArchiveMenu = nullptr;
     bool archiveConfirmationRequested = false;
+
+    enum class CategoryEditorMode { Create, Rename, Delete };
+
+    struct CategoryEditor {
+        CategoryEditorMode Mode = CategoryEditorMode::Create;
+        std::string OriginalName;
+        std::array<char, 256> Name{};
+        UI::MenuTree* Menu = nullptr;
+        std::string MenuName;
+        const char* Error = nullptr;
+        bool AssignToMenu = false;
+        bool FromManager = false;
+        bool OpenRequested = false;
+    } categoryEditor;
+
+    bool categoryManagerRequested = false;
+    std::optional<std::string> categoryToOpen;
+    const char* categoryAssignmentError = nullptr;
 
     struct WindowSizeAndPosition {
         const char* Section;
@@ -393,6 +415,9 @@ namespace {
             if (pendingArchiveMenu == location.Node) {
                 pendingArchiveMenuName = mutation.NewName;
             }
+            if (categoryEditor.Menu == location.Node) {
+                categoryEditor.MenuName = mutation.NewName;
+            }
         }
         return true;
     }
@@ -411,6 +436,10 @@ namespace {
             pendingArchiveMenuName.clear();
             pendingArchiveMenu = nullptr;
             archiveConfirmationRequested = false;
+        }
+        if (ContainsNode(location.Node, categoryEditor.Menu)) {
+            categoryEditor.Menu = nullptr;
+            categoryEditor.MenuName.clear();
         }
 
         location.Parent->Children.erase(location.Name);
@@ -475,17 +504,249 @@ namespace {
         }
     }
 
+    void RequestCategoryEditor(CategoryEditorMode mode, const std::string& name, bool fromManager,
+                               UI::MenuTree* menu = nullptr, const std::string& menuName = {}) {
+        categoryEditor = {};
+        categoryEditor.Mode = mode;
+        categoryEditor.OriginalName = name;
+        const auto length = std::min(name.size(), categoryEditor.Name.size() - 1);
+        std::copy_n(name.begin(), length, categoryEditor.Name.begin());
+        categoryEditor.Menu = menu;
+        categoryEditor.MenuName = menuName;
+        categoryEditor.AssignToMenu = menu != nullptr;
+        categoryEditor.FromManager = fromManager;
+        categoryEditor.OpenRequested = true;
+    }
+
+    bool CategoryCancelPressed() {
+        return ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);
+    }
+
+    // Hash category names as data so "##" and "###" remain ordinary name characters.
+    void PushCategoryID(const std::string& name) {
+        ImGui::PushID(static_cast<int>(ImHashData(name.data(), name.size())));
+    }
+
+    bool RenderCategoryHeading(const char* label) {
+        if (ImGui::GetCurrentWindow()->SkipItems) {
+            return false;
+        }
+        const auto headingPosition = ImGui::GetCursorScreenPos();
+        for (const auto color : {ImGuiCol_Header, ImGuiCol_HeaderHovered, ImGuiCol_HeaderActive, ImGuiCol_Text}) {
+            ImGui::PushStyleColor(color, ImVec4{});
+        }
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        const bool open = ImGui::TreeNodeEx("Group",
+            ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_DefaultOpen, "%s", label);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(4);
+        const auto nextPosition = ImGui::GetCursorScreenPos();
+
+        // Keep the tree's interaction and state, and draw its heading as a plain separator.
+        ImGui::SetCursorScreenPos(headingPosition);
+        ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextAlign, ImVec2(0.0f, 0.5f));
+        ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextPadding,
+            ImVec2(ImGui::GetStyle().ItemSpacing.x + ImGui::GetFontSize() * 0.35f, ImGui::GetStyle().FramePadding.y));
+        ImGui::SeparatorTextEx(0, label, label + std::strlen(label), 0.0f);
+        ImGui::PopStyleVar(3);
+        ImGui::SetCursorScreenPos(nextPosition);
+        return open;
+    }
+
+    bool RenderCategoryOption(const std::string& name, const char* label, bool selected) {
+        PushCategoryID(name);
+        const auto textPosition = ImGui::GetCursorScreenPos();
+        const auto labelEnd = label + std::strlen(label);
+        const float textWidth = ImGui::CalcTextSize(label, labelEnd).x;
+        const float width = ImMax(textWidth, ImGui::GetContentRegionAvail().x);
+        const bool chosen = ImGui::Selectable("##CategoryOption", selected,
+            ImGuiSelectableFlags_DontClosePopups, ImVec2(width, 0.0f));
+        ImGui::RenderTextClipped(textPosition, ImGui::GetItemRectMax(), label, labelEnd, nullptr);
+        if (selected) {
+            ImGui::SetItemDefaultFocus();
+        }
+        ImGui::PopID();
+        return chosen;
+    }
+
+    void RenderCategoryChooser(const std::string& menuName, UI::MenuTree* menu) {
+        ImGui::SetNextWindowSizeConstraints(ImVec2{}, ImGui::GetMainViewport()->WorkSize * 0.85f);
+        if (!ImGui::BeginPopup("CategoryChooser")) {
+            return;
+        }
+        const auto currentCategory = RootMenuConfig::GetCategory(menuName);
+        auto chooseCategory = [&](const std::string& name) {
+            if (RootMenuConfig::SetCategory(menuName, name)) {
+                categoryToOpen = name;
+                ImGui::CloseCurrentPopup();
+            } else {
+                categoryAssignmentError = "Categories.Error.Save";
+            }
+        };
+        if (RenderCategoryOption({}, Translations::Get("Categories.Uncategorized"), currentCategory.empty())) {
+            chooseCategory({});
+        }
+        for (const auto& name : RootMenuConfig::GetCategories()) {
+            if (RenderCategoryOption(name, name.c_str(), name == currentCategory)) {
+                chooseCategory(name);
+            }
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(Translations::Get("Categories.Create"))) {
+            RequestCategoryEditor(CategoryEditorMode::Create, {}, false, menu, menuName);
+        }
+        if (categoryAssignmentError) {
+            ImGui::TextWrapped("%s", Translations::Get(categoryAssignmentError));
+        }
+        ImGui::EndPopup();
+    }
+
+    void RenderCategoryEditor() {
+        const bool deleting = categoryEditor.Mode == CategoryEditorMode::Delete;
+        const auto titleKey = deleting ? "Categories.Delete.Title" :
+            (categoryEditor.Mode == CategoryEditorMode::Create ? "Categories.Create" : "Categories.Rename");
+        const auto title = std::format("{}###MenuCategoryEditor", Translations::Get(titleKey));
+        if (categoryEditor.OpenRequested) {
+            ImGui::OpenPopup(title.c_str());
+            categoryEditor.OpenRequested = false;
+        }
+        ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 20.0f, 0.0f), ImGuiCond_Appearing);
+        ImGui::SetNextWindowSizeConstraints(ImVec2{}, ImGui::GetMainViewport()->WorkSize * 0.85f);
+        if (!ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            return;
+        }
+        if (categoryEditor.AssignToMenu && !categoryEditor.Menu) {
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            return;
+        }
+        bool submitted = false;
+        if (deleting) {
+            ImGui::TextWrapped("%s", Translations::Get("Categories.Delete.Confirm"));
+            ImGui::TextUnformatted(categoryEditor.OriginalName.c_str());
+        } else {
+            ImGui::TextUnformatted(Translations::Get("Categories.Name"));
+            if (ImGui::IsWindowAppearing() && !UI::GamepadNavigation::IsActive()) {
+                ImGui::SetKeyboardFocusHere();
+            }
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            submitted = ImGui::InputText("##CategoryName", categoryEditor.Name.data(), categoryEditor.Name.size(),
+                ImGuiInputTextFlags_EnterReturnsTrue);
+            if (ImGui::IsItemEdited()) {
+                categoryEditor.Error = nullptr;
+            }
+        }
+        if (categoryEditor.Error) {
+            ImGui::TextWrapped("%s", Translations::Get(categoryEditor.Error));
+        }
+        ImGui::Separator();
+        const bool save = ImGui::Button(Translations::Get(deleting ? "Categories.Delete" : "Categories.Save"));
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button(Translations::Get("Categories.Cancel")) || CategoryCancelPressed();
+        if (deleting) {
+            ImGui::SetItemDefaultFocus();
+        }
+        if (cancel) {
+            ImGui::CloseCurrentPopup();
+        } else if (save || submitted) {
+            const auto name = RootMenuConfig::NormalizeCategoryName(categoryEditor.Name.data());
+            const auto categories = RootMenuConfig::GetCategories();
+            const bool validName = RootMenuConfig::IsValidCategoryName(name) &&
+                (!categories.contains(name) || (categoryEditor.Mode == CategoryEditorMode::Rename &&
+                                               name == categoryEditor.OriginalName));
+            if (!deleting && !validName) {
+                categoryEditor.Error = "Categories.Error.Name";
+            } else {
+                bool saved = false;
+                switch (categoryEditor.Mode) {
+                    case CategoryEditorMode::Create:
+                        saved = RootMenuConfig::CreateCategory(name, categoryEditor.MenuName);
+                        break;
+                    case CategoryEditorMode::Rename:
+                        saved = RootMenuConfig::RenameCategory(categoryEditor.OriginalName, name);
+                        break;
+                    case CategoryEditorMode::Delete:
+                        saved = RootMenuConfig::RemoveCategory(categoryEditor.OriginalName);
+                        break;
+                }
+                if (saved) {
+                    categoryToOpen = deleting ? std::string{} : name;
+                    ImGui::CloseCurrentPopup();
+                } else {
+                    categoryEditor.Error = "Categories.Error.Save";
+                }
+            }
+        }
+        ImGui::EndPopup();
+    }
+
+    void RenderCategoryDialogs() {
+        const auto title = std::format("{}###MenuCategoryManager", Translations::Get("Categories.Manage.Title"));
+        if (categoryManagerRequested) {
+            ImGui::OpenPopup(title.c_str());
+            categoryManagerRequested = false;
+        }
+        ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 24.0f, 0.0f), ImGuiCond_Appearing);
+        ImGui::SetNextWindowSizeConstraints(ImVec2{}, ImGui::GetMainViewport()->WorkSize * 0.85f);
+        if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (ImGui::Button(Translations::Get("Categories.Create"))) {
+                RequestCategoryEditor(CategoryEditorMode::Create, {}, true);
+            }
+            ImGui::BeginChild("CategoryList", ImVec2(0.0f, ImGui::GetFrameHeightWithSpacing() * 6.0f), ImGuiChildFlags_Border);
+            const auto categories = RootMenuConfig::GetCategories();
+            if (categories.empty()) {
+                ImGui::TextUnformatted(Translations::Get("Categories.Empty"));
+            } else if (ImGui::BeginTable("Categories", 3)) {
+                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+                for (const auto key : {"Categories.Rename", "Categories.Delete"}) {
+                    const auto width = ImGui::CalcTextSize(Translations::Get(key)).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                    ImGui::TableSetupColumn(key, ImGuiTableColumnFlags_WidthFixed, width);
+                }
+                for (const auto& name : categories) {
+                    PushCategoryID(name);
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::TextWrapped("%s", name.c_str());
+                    ImGui::TableNextColumn();
+                    if (ImGui::Button(Translations::Get("Categories.Rename"))) {
+                        RequestCategoryEditor(CategoryEditorMode::Rename, name, true);
+                    }
+                    ImGui::TableNextColumn();
+                    if (ImGui::Button(Translations::Get("Categories.Delete"))) {
+                        RequestCategoryEditor(CategoryEditorMode::Delete, name, true);
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            ImGui::EndChild();
+            const bool childOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
+            const bool close = ImGui::Button(Translations::Get("Categories.Close")) || CategoryCancelPressed();
+            if (close && !childOpen && !categoryEditor.OpenRequested) {
+                ImGui::CloseCurrentPopup();
+            }
+            if (categoryEditor.FromManager) {
+                RenderCategoryEditor();
+            }
+            ImGui::EndPopup();
+        }
+        if (!categoryEditor.FromManager) {
+            RenderCategoryEditor();
+        }
+    }
+
     void RenderRootMenuButtons(const std::string& menuName, UI::MenuTree* menu, bool favorite) {
         const auto headerMin = ImGui::GetItemRectMin();
         const auto headerMax = ImGui::GetItemRectMax();
         const auto restoreCursor = ImGui::GetCursorScreenPos();
         const float buttonSize = headerMax.y - headerMin.y;
 
-        ImGui::PushID(menuName.c_str());
+        ImGui::PushID(menu);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 
-        ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize * 2.0f, headerMin.y));
+        ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize * 3.0f, headerMin.y));
         ImGui::PushStyleColor(
             ImGuiCol_Text, favorite ? FAVORITE_STAR_COLOR : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         if (ImGui::Button(FAVORITE_STAR, ImVec2(buttonSize, buttonSize))) {
@@ -493,6 +754,13 @@ namespace {
         }
         ImGui::PopStyleColor();
         RenderTooltip(favorite ? "Menu.RemoveFavorite" : "Menu.AddFavorite");
+
+        ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize * 2.0f, headerMin.y));
+        if (ImGui::Button(CATEGORY_ICON, ImVec2(buttonSize, buttonSize))) {
+            categoryAssignmentError = nullptr;
+            ImGui::OpenPopup("CategoryChooser");
+        }
+        RenderTooltip("Menu.Category");
 
         ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize, headerMin.y));
         if (ImGui::Button(ARCHIVE_ICON, ImVec2(buttonSize, buttonSize))) {
@@ -504,6 +772,7 @@ namespace {
 
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
+        RenderCategoryChooser(menuName, menu);
         ImGui::PopID();
         ImGui::SetCursorScreenPos(restoreCursor);
     }
@@ -731,6 +1000,9 @@ void __stdcall UI::RenderMenuWindow() {
                     WindowManager::ConfigInterface->IsOpen = true;
                 }
                 ImGui::Separator();
+                if (ImGui::MenuItem(Translations::Get("Options.ManageCategories"))) {
+                    categoryManagerRequested = true;
+                }
                 RenderArchivedMenuRecovery();
             }
             GamepadNavigation::EndArea();
@@ -795,12 +1067,13 @@ void __stdcall UI::RenderMenuWindow() {
                       ImGuiChildFlags_Border);
     GamepadNavigation::BeginArea(GamepadNavigation::Area::PageTree);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 5.0f));
-    std::vector<const std::pair<const std::string, UI::MenuTree*>*> rootMenus;
+    using RootMenuEntry = std::pair<const std::string, UI::MenuTree*>;
+    std::vector<const RootMenuEntry*> rootMenus;
     rootMenus.reserve(RootMenu->Children.size());
     for (const auto& item : RootMenu->Children) {
         rootMenus.push_back(&item);
     }
-    std::stable_sort(rootMenus.begin(), rootMenus.end(), [](const auto* left, const auto* right) {
+    std::stable_sort(rootMenus.begin(), rootMenus.end(), [](auto left, auto right) {
         const bool leftFavorite = RootMenuConfig::IsFavorite(left->first);
         const bool rightFavorite = RootMenuConfig::IsFavorite(right->first);
         if (leftFavorite != rightFavorite) {
@@ -809,7 +1082,11 @@ void __stdcall UI::RenderMenuWindow() {
         return left->first < right->first;
     });
 
-    for (const auto* rootMenu : rootMenus) {
+    std::map<std::string, std::vector<const RootMenuEntry*>> categoryMenus;
+    for (const auto& name : RootMenuConfig::GetCategories()) {
+        categoryMenus.try_emplace(name);
+    }
+    for (const auto rootMenu : rootMenus) {
         const auto& item = *rootMenu;
         if (RootMenuConfig::IsArchived(item.first)) {
             for (auto node : item.second->Children) {
@@ -817,30 +1094,66 @@ void __stdcall UI::RenderMenuWindow() {
             }
             continue;
         }
+        if (filter.PassFilter(item.first.c_str())) {
+            categoryMenus[RootMenuConfig::GetCategory(item.first)].push_back(rootMenu);
+        }
+    }
 
-        const bool favorite = RootMenuConfig::IsFavorite(item.first);
-        const bool passesFilter = filter.PassFilter(item.first.c_str());
-        const auto headerLabel = std::format("{}##RootMenu-{}", item.first, item.first);
-        const auto headerFlags = ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_ClipLabelForTrailingButton;
-        const bool headerOpen = passesFilter && ImGui::CollapsingHeader(headerLabel.c_str(), headerFlags);
-
-        if (passesFilter) {
+    const auto requestedCategory = categoryToOpen;
+    categoryToOpen.reset();
+    // Uncategorized follows the named groups; map order keeps names alphabetical.
+    auto renderCategory = [&](const std::string& name, const std::vector<const RootMenuEntry*>& menus) {
+        if (menus.empty() && filter.IsActive()) {
+            return;
+        }
+        ImGui::PushID("MenuCategory");
+        PushCategoryID(name);
+        if (filter.IsActive() || (requestedCategory && *requestedCategory == name)) {
+            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        }
+        const auto label = name.empty() ? Translations::Get("Categories.Uncategorized") : name.c_str();
+        const bool categoryOpen = RenderCategoryHeading(label);
+        ImGui::PopID();
+        ImGui::PopID();
+        if (!categoryOpen) {
+            return;
+        }
+        // Indent without pushing a category ID: a moved mod keeps its widget state.
+        ImGui::Indent();
+        for (const auto rootMenu : menus) {
+            const auto& item = *rootMenu;
+            const bool favorite = RootMenuConfig::IsFavorite(item.first);
+            const bool headerOpen = ImGui::TreeNodeEx(item.second,
+                ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_AllowOverlap, "");
+            const auto headerMin = ImGui::GetItemRectMin();
+            const auto headerMax = ImGui::GetItemRectMax();
+            const float buttonSize = headerMax.y - headerMin.y;
+            const ImVec2 textMin{headerMin.x + ImGui::GetTreeNodeToLabelSpacing(),
+                headerMin.y + ImGui::GetStyle().FramePadding.y};
+            const ImVec2 textMax{headerMax.x - buttonSize * 3.0f, headerMax.y};
+            if (textMax.x > textMin.x) {
+                ImGui::RenderTextClipped(textMin, textMax, item.first.c_str(), item.first.c_str() + item.first.size(), nullptr);
+            }
             RenderRootMenuButtons(item.first, item.second, favorite);
-        }
-
-        if (RootMenuConfig::IsArchived(item.first)) {
-            for (auto node : item.second->Children) {
-                DummyRenderer(node);
-            }
-        } else if (headerOpen) {
-            for (auto node : item.second->SortedChildren) {
-                RenderNode(node);
-            }
-        } else {
-            for (auto node : item.second->Children) {
-                DummyRenderer(node);
+            if (!RootMenuConfig::IsArchived(item.first) && headerOpen) {
+                for (auto node : item.second->SortedChildren) {
+                    RenderNode(node);
+                }
+            } else {
+                for (auto node : item.second->Children) {
+                    DummyRenderer(node);
+                }
             }
         }
+        ImGui::Unindent();
+    };
+    for (const auto& [name, menus] : categoryMenus) {
+        if (!name.empty()) {
+            renderCategory(name, menus);
+        }
+    }
+    if (const auto uncategorized = categoryMenus.find(std::string{}); uncategorized != categoryMenus.end()) {
+        renderCategory(uncategorized->first, uncategorized->second);
     }
     ImGui::PopStyleVar();
     GamepadNavigation::EndArea();
@@ -860,6 +1173,7 @@ void __stdcall UI::RenderMenuWindow() {
     GamepadNavigation::RenderHintBar(display_node != nullptr);
 
     RenderArchiveConfirmation();
+    RenderCategoryDialogs();
 
     GamepadNavigation::RenderFocusedItemHighlight();
     GamepadNavigation::PopFocusStyle();

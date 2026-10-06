@@ -72,6 +72,16 @@ These functions return `true` when the request is accepted. They return `false` 
 
 Renaming an open page preserves its selection. Deleting the open page, or deleting a section that contains it, clears the selection. The framework does not automatically select another page.
 
+## Organizing mods into categories
+
+Use the category button beside a mod's favorite and archive controls to choose a category, move it to **Uncategorized**, or create a new category. **Options > Manage Categories** lets you create, rename, and delete categories. Deleting a category moves its mods to **Uncategorized**.
+
+Categories appear as collapsible groups in the sidebar. Multiple groups can stay open, favorites appear first within each group, and mod-name search finds matches across categories. These controls also support gamepad navigation and selection.
+
+Each top-level menu section can belong to one category. If a mod registers multiple top-level sections, categorize each section separately. Categories only organize the panel; registered section paths and the developer API are unchanged. A top-level section's category follows it when renamed at runtime and is removed when the section is deleted.
+
+Categories and assignments are saved alongside favorites and archived menus in `Data/SKSE/Plugins/SKSEMenuFrameworkMenuConfig.json` and restored across game restarts.
+
 ## Font Awesome
 
 Header file

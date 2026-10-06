@@ -536,7 +536,9 @@ namespace UI::GamepadNavigation {
         }
         wasSuspended = suspended;
 
-        optionsToggleRequested = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false) && !ImGui::IsAnyItemActive();
+        const bool canToggleOptions = !IsPopupBlockingAreaNavigation() || ImGui::IsPopupOpen(Translations::Get("Options"));
+        optionsToggleRequested = canToggleOptions && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false) &&
+                                 !ImGui::IsAnyItemActive();
 
         if (!IsPopupBlockingAreaNavigation() && !ImGui::IsAnyItemActive()) {
             if (hasPage && ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false)) {
@@ -616,7 +618,7 @@ namespace UI::GamepadNavigation {
         const std::size_t areaIndex = AreaIndex(recordingArea);
         auto& items = currentItems[areaIndex];
 
-        if (requestedFocus && *requestedFocus == recordingArea) {
+        if (requestedFocus && *requestedFocus == recordingArea && !IsPopupBlockingAreaNavigation(recordingArea)) {
             if (items.empty()) {
                 FocusWindowWithoutItem(areaWindows[areaIndex]);
                 focusedIndices[areaIndex] = 0;

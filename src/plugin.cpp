@@ -7,6 +7,10 @@
 #include "RootMenuConfig.h"
 #include "Translations.h"
 
+SKSE_PLUGIN_PRELOAD(const SKSE::PreLoadInterface*) {
+    return true;
+}
+
 SKSEPluginLoad(const SKSE::LoadInterface* skse) {
     SetupLog();
     #if VALIDATE_LICENSE

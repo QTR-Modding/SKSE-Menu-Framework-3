@@ -23,7 +23,6 @@ namespace {
     constexpr auto CONFIG_PATH = "Data/SKSE/Plugins/SKSEMenuFrameworkMenuConfig.json";
     constexpr std::size_t MAX_CATEGORY_NAME_LENGTH = 255;
 
-    std::set<std::string> favoriteMenus;
     std::set<std::string> archivedMenus;
     std::set<std::string> categories;
     std::map<std::string, std::string> menuCategories;
@@ -154,7 +153,6 @@ namespace {
         std::array<wchar_t, MAX_PATH> temporaryPath{};
         try {
             const nlohmann::json config = {
-                {"favorites", favoriteMenus},
                 {"archived", archivedMenus},
                 {"categories", savedCategories},
                 {"menuCategories", savedMenuCategories},
@@ -215,7 +213,6 @@ namespace {
 }
 
 void RootMenuConfig::Load() {
-    favoriteMenus.clear();
     archivedMenus.clear();
     categories.clear();
     menuCategories.clear();
@@ -233,7 +230,6 @@ void RootMenuConfig::Load() {
             return;
         }
 
-        LoadMenuNames(config, "favorites", favoriteMenus);
         LoadMenuNames(config, "archived", archivedMenus);
         LoadMenuNames(config, "hidden", archivedMenus);
         LoadCategories(config);
@@ -244,16 +240,8 @@ void RootMenuConfig::Load() {
     }
 }
 
-bool RootMenuConfig::IsFavorite(const std::string& menuName) {
-    return favoriteMenus.contains(menuName);
-}
-
 bool RootMenuConfig::IsArchived(const std::string& menuName) {
     return archivedMenus.contains(menuName);
-}
-
-void RootMenuConfig::SetFavorite(const std::string& menuName, bool favorite) {
-    SetMenuState(favoriteMenus, menuName, favorite);
 }
 
 void RootMenuConfig::SetArchived(const std::string& menuName, bool archived) {
@@ -436,10 +424,6 @@ void RootMenuConfig::RenameMenu(const std::string& oldName, const std::string& n
     }
 
     bool changed = false;
-    if (favoriteMenus.erase(oldName) > 0) {
-        favoriteMenus.insert(newName);
-        changed = true;
-    }
     if (archivedMenus.erase(oldName) > 0) {
         archivedMenus.insert(newName);
         changed = true;
@@ -461,11 +445,10 @@ void RootMenuConfig::RenameMenu(const std::string& oldName, const std::string& n
 }
 
 void RootMenuConfig::RemoveMenu(const std::string& menuName) {
-    const bool favoriteRemoved = favoriteMenus.erase(menuName) > 0;
     const bool archivedRemoved = archivedMenus.erase(menuName) > 0;
     const bool categoryRemoved = menuCategories.erase(menuName) > 0;
     const bool orderRemoved = std::erase(menuOrder, menuName) > 0;
-    if (favoriteRemoved || archivedRemoved || categoryRemoved || orderRemoved) {
+    if (archivedRemoved || categoryRemoved || orderRemoved) {
         Save();
     }
 }

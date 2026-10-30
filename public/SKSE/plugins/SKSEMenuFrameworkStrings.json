@@ -7,8 +7,6 @@
   "Options.RestoreArchivedMenus": "Restore Archived Menus",
   "Options.NoArchivedMenus": "No archived menus",
 
-  "Menu.AddFavorite": "Add to favorites",
-  "Menu.RemoveFavorite": "Remove from favorites",
   "Menu.Category": "Choose category",
   "Menu.Reorder": "Drag onto a mod to reorder, or onto a category to move to its end.",
   "Menu.Reorder.Before": "Before:",

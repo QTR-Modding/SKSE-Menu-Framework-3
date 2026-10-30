@@ -74,9 +74,9 @@ Renaming an open page preserves its selection. Deleting the open page, or deleti
 
 ## Organizing and reordering mods
 
-Use the category button beside a mod's favorite and archive controls to choose a category, move it to **Uncategorized**, or create a new category. **Options > Manage Categories** lets you create, rename, and delete categories. Deleting a category moves its mods to **Uncategorized**.
+Use the category button beside a mod's archive control to choose a category, move it to **Uncategorized**, or create a new category. **Options > Manage Categories** lets you create, rename, and delete categories. Deleting a category moves its mods to **Uncategorized**.
 
-When no categories exist, mods appear directly in the sidebar without an **Uncategorized** heading or category indentation. Once a category exists, categories appear as collapsible groups in the sidebar. A caret beside each group name points right when collapsed and down when expanded. Multiple groups can stay open, and mod-name search finds matches across categories. Before a custom order is saved, mods appear with favorites first, then alphabetically. Saved manual ordering takes priority while keeping favorite status. The category controls also support gamepad navigation and selection.
+When no categories exist, mods appear directly in the sidebar without an **Uncategorized** heading or category indentation. Once a category exists, categories appear as collapsible groups in the sidebar. A caret beside each group name points right when collapsed and down when expanded. Multiple groups can stay open, and mod-name search finds matches across categories. Mods follow saved manual ordering, with alphabetical order as the fallback. The category controls also support gamepad navigation and selection.
 
 Drag a mod header onto the upper or lower half of another mod's header to place it before or after that mod. Drop onto a category heading to move the mod to the end of that category, including empty or collapsed categories. Drop onto **Uncategorized** to move it out of a named category. Hovering over a menu or category heading while dragging does not open it. All category headings remain available during a filtered drag, and hovering near the sidebar's top or bottom scrolls the list. Press **Escape** to cancel a drag.
 
@@ -84,7 +84,7 @@ A prominent line with end markers shows the insertion position, below all of a m
 
 Each top-level menu section can belong to one category. If a mod registers multiple top-level sections, categorize each section separately. Categories only organize the panel; registered section paths and the developer API are unchanged. A top-level section's category follows it when renamed at runtime and is removed when the section is deleted.
 
-Categories, assignments, and mod ordering are saved alongside favorites and archived menus in `Data/SKSE/Plugins/SKSEMenuFrameworkMenuConfig.json` and restored across game restarts. A failed move save keeps the previous category and order and displays an error.
+Categories, assignments, mod ordering, and archived menus are saved in `Data/SKSE/Plugins/SKSEMenuFrameworkMenuConfig.json` and restored across game restarts. A failed move save keeps the previous category and order and displays an error.
 
 ## Font Awesome
 

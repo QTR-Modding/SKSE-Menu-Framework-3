@@ -24,6 +24,7 @@ static ImGuiTextFilter filter;
 
 UI::MenuTree* UI::RootMenu = new UI::MenuTree();
 
+
 int frame = 0;
 
 UI::MenuTree* display_node;
@@ -34,11 +35,9 @@ static ImGuiTreeNodeFlags base_flags =
 static int selection_mask = (1 << 2);
 
 namespace {
-    constexpr auto FAVORITE_STAR = "\xEF\x80\x85";
     constexpr auto ARCHIVE_ICON = "\xEF\x86\x87";
     constexpr auto CATEGORY_ICON = "\xEF\x80\xAB";
     constexpr auto ROOT_MENU_PAYLOAD = "SMF_ROOT_MENU";
-    constexpr ImVec4 FAVORITE_STAR_COLOR = ImVec4(1.0f, 0.84f, 0.0f, 1.0f);
 
     using RootMenuEntry = std::pair<const std::string, UI::MenuTree*>;
 
@@ -562,11 +561,6 @@ namespace {
             if (leftIndex != rightIndex) {
                 return leftIndex < rightIndex;
             }
-            const bool leftFavorite = RootMenuConfig::IsFavorite(left->first);
-            const bool rightFavorite = RootMenuConfig::IsFavorite(right->first);
-            if (leftFavorite != rightFavorite) {
-                return leftFavorite;
-            }
             return left->first < right->first;
         });
         return menus;
@@ -974,7 +968,7 @@ namespace {
         }
     }
 
-    void RenderRootMenuButtons(const std::string& menuName, UI::MenuTree* menu, bool favorite) {
+    void RenderRootMenuButtons(const std::string& menuName, UI::MenuTree* menu) {
         const auto headerMin = ImGui::GetItemRectMin();
         const auto headerMax = ImGui::GetItemRectMax();
         const auto restoreCursor = ImGui::GetCursorScreenPos();
@@ -983,15 +977,6 @@ namespace {
         ImGui::PushID(menu);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-
-        ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize * 3.0f, headerMin.y));
-        ImGui::PushStyleColor(
-            ImGuiCol_Text, favorite ? FAVORITE_STAR_COLOR : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        if (ImGui::Button(FAVORITE_STAR, ImVec2(buttonSize, buttonSize))) {
-            RootMenuConfig::SetFavorite(menuName, !favorite);
-        }
-        ImGui::PopStyleColor();
-        RenderTooltip(favorite ? "Menu.RemoveFavorite" : "Menu.AddFavorite");
 
         ImGui::SetCursorScreenPos(ImVec2(headerMax.x - buttonSize * 2.0f, headerMin.y));
         if (ImGui::Button(CATEGORY_ICON, ImVec2(buttonSize, buttonSize))) {
@@ -1365,7 +1350,6 @@ void __stdcall UI::RenderMenuWindow() {
         }
         for (const auto rootMenu : menus) {
             const auto& item = *rootMenu;
-            const bool favorite = RootMenuConfig::IsFavorite(item.first);
             const bool headerOpen = ImGui::TreeNodeEx(item.second,
                 ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_AllowOverlap, "");
             const auto headerMin = ImGui::GetItemRectMin();
@@ -1373,13 +1357,13 @@ void __stdcall UI::RenderMenuWindow() {
             const float buttonSize = headerMax.y - headerMin.y;
             const ImVec2 textMin{headerMin.x + ImGui::GetTreeNodeToLabelSpacing(),
                 headerMin.y + ImGui::GetStyle().FramePadding.y};
-            const ImVec2 textMax{headerMax.x - buttonSize * 3.0f, headerMax.y};
+            const ImVec2 textMax{headerMax.x - buttonSize * 2.0f, headerMax.y};
             if (textMax.x > textMin.x) {
                 ImGui::RenderTextClipped(textMin, textMax, item.first.c_str(), item.first.c_str() + item.first.size(), nullptr);
             }
             RenderRootMenuDragSource(item.first);
             auto menuPreview = RenderRootMenuDropTarget(name, item.first, pendingDrop);
-            RenderRootMenuButtons(item.first, item.second, favorite);
+            RenderRootMenuButtons(item.first, item.second);
             if (!RootMenuConfig::IsArchived(item.first) && headerOpen) {
                 for (auto node : item.second->SortedChildren) {
                     RenderNode(node);

@@ -1315,9 +1315,11 @@ void __stdcall UI::RenderMenuWindow() {
     std::optional<RootMenuDrop> pendingDrop;
     std::optional<RootMenuDropPreview> dropPreview;
 
+    const auto categories = RootMenuConfig::GetCategories();
+    const bool showCategories = !categories.empty();
     std::map<std::string, std::vector<const RootMenuEntry*>> categoryMenus;
     categoryMenus.try_emplace(std::string{});
-    for (const auto& name : RootMenuConfig::GetCategories()) {
+    for (const auto& name : categories) {
         categoryMenus.try_emplace(name);
     }
     for (const auto rootMenu : rootMenus) {
@@ -1340,24 +1342,27 @@ void __stdcall UI::RenderMenuWindow() {
         if (menus.empty() && filter.IsActive() && !GetDraggedRootMenuName()) {
             return;
         }
-        ImGui::PushID("MenuCategory");
-        PushCategoryID(name);
-        if (filter.IsActive() || (requestedCategory && *requestedCategory == name)) {
-            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
-        }
-        const auto label = name.empty() ? Translations::Get("Categories.Uncategorized") : name.c_str();
-        const bool categoryOpen = RenderCategoryHeading(label);
-        auto categoryPreview = RenderRootMenuDropTarget(name, {}, pendingDrop);
-        ImGui::PopID();
-        ImGui::PopID();
-        if (!categoryOpen) {
-            if (categoryPreview) {
-                dropPreview = categoryPreview;
+        std::optional<RootMenuDropPreview> categoryPreview;
+        if (showCategories) {
+            ImGui::PushID("MenuCategory");
+            PushCategoryID(name);
+            if (filter.IsActive() || (requestedCategory && *requestedCategory == name)) {
+                ImGui::SetNextItemOpen(true, ImGuiCond_Always);
             }
-            return;
+            const auto label = name.empty() ? Translations::Get("Categories.Uncategorized") : name.c_str();
+            const bool categoryOpen = RenderCategoryHeading(label);
+            categoryPreview = RenderRootMenuDropTarget(name, {}, pendingDrop);
+            ImGui::PopID();
+            ImGui::PopID();
+            if (!categoryOpen) {
+                if (categoryPreview) {
+                    dropPreview = categoryPreview;
+                }
+                return;
+            }
+            // Indent without pushing a category ID: a moved mod keeps its widget state.
+            ImGui::Indent();
         }
-        // Indent without pushing a category ID: a moved mod keeps its widget state.
-        ImGui::Indent();
         for (const auto rootMenu : menus) {
             const auto& item = *rootMenu;
             const bool favorite = RootMenuConfig::IsFavorite(item.first);
@@ -1393,7 +1398,9 @@ void __stdcall UI::RenderMenuWindow() {
                 dropPreview = menuPreview;
             }
         }
-        ImGui::Unindent();
+        if (showCategories) {
+            ImGui::Unindent();
+        }
         if (categoryPreview) {
             const float halfSpacing = ImGui::GetStyle().ItemSpacing.y * 0.5f;
             categoryPreview->InsertionY = ImMax(categoryPreview->InsertionY,

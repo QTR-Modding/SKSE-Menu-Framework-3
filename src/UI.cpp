@@ -24,7 +24,6 @@ static ImGuiTextFilter filter;
 
 UI::MenuTree* UI::RootMenu = new UI::MenuTree();
 
-
 int frame = 0;
 
 UI::MenuTree* display_node;
@@ -590,7 +589,8 @@ namespace {
     }
 
     void RenderRootMenuDragSource(const std::string& menuName) {
-        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAutoExpirePayload)) {
+        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAutoExpirePayload |
+            ImGuiDragDropFlags_SourceNoHoldToOpenOthers)) {
             ImGui::SetDragDropPayload(ROOT_MENU_PAYLOAD, menuName.c_str(), menuName.size() + 1);
             ImGui::TextUnformatted(menuName.c_str());
             ImGui::TextUnformatted(Translations::Get("Menu.Reorder"));

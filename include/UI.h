@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "MenuPath.h"
 #include "WindowManager.h"
 
@@ -22,6 +24,7 @@ namespace UI {
         std::vector<std::pair<const std::string, MenuTree*>> SortedChildren;
         RenderFunction Render;
         std::string Title;
+        uint32_t Flags = 0;
     };
     extern UI::MenuTree* RootMenu;
 
@@ -35,6 +38,8 @@ namespace UI {
     void __stdcall RenderMenuWindow();
     void AddToTree(UI::MenuTree* node, std::vector<std::string>& path, RenderFunction render, std::string title);
     bool QueueMenuMutation(MenuMutationType type, std::string_view path, std::string_view newName = {});
+    bool SetMenuSectionFlags(std::string_view path, uint32_t flags, uint32_t mask);
+    bool GetMenuSectionFlags(std::string_view path, uint32_t* out);
     void ApplyPendingMenuMutations();
     void SaveWindowSettings();
     void __stdcall RenderConfigWindow();

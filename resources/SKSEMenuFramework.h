@@ -34,6 +34,12 @@ namespace ImGuiMCP {
 }
 
 namespace SKSEMenuFramework {
+    enum SectionFlags : uint32_t {
+        SectionFlags_None = 0,
+        SectionFlags_Hidden = 1 << 0,
+        SectionFlags_Disabled = 1 << 1
+    };
+
     inline bool IsInstalled() {
         constexpr auto dllPath = "Data/SKSE/Plugins/SKSEMenuFramework.dll";
         return std::filesystem::exists(dllPath);
@@ -74,6 +80,8 @@ namespace SKSEMenuFramework {
         using AddSectionItemFunction = void (*)(const char* path, RenderFunction rendererFunction);
         using RenameSectionFunction = bool (*)(const char* path, const char* newName);
         using DeleteSectionFunction = bool (*)(const char* path);
+        using SetSectionFlagsFunction = bool (*)(const char* path, uint32_t flags, uint32_t mask);
+        using GetSectionFlagsFunction = bool (*)(const char* path, uint32_t* out);
 
         using RegisterInputEventFuction = int64_t (*)(InputEventCallback callback);
         using UnregisterInputEventFuction = void (*)(uint64_t id);
@@ -168,6 +176,16 @@ namespace SKSEMenuFramework {
     inline bool DeleteSection(std::string path) {
         static auto func = Model::Internal::GetFunction<Model::DeleteSectionFunction>("DeleteSection");
         return func ? func(path.c_str()) : false;
+    }
+
+    inline bool SetSectionFlags(std::string path, uint32_t flags, uint32_t mask = ~0u) {
+        static auto func = Model::Internal::GetFunction<Model::SetSectionFlagsFunction>("SetSectionFlags");
+        return func ? func(path.c_str(), flags, mask) : false;
+    }
+
+    inline bool GetSectionFlags(std::string path, uint32_t* out) {
+        static auto func = Model::Internal::GetFunction<Model::GetSectionFlagsFunction>("GetSectionFlags");
+        return func ? func(path.c_str(), out) : false;
     }
 
     inline Model::WindowInterface* AddWindow(Model::RenderFunction rendererFunction, bool doesWindowPauseGame = true) {

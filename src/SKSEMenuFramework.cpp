@@ -34,6 +34,14 @@ bool DeleteSection(const char* path) {
     return UI::QueueMenuMutation(UI::MenuMutationType::Delete, path ? path : "");
 }
 
+bool SetSectionFlags(const char* path, uint32_t flags, uint32_t mask) {
+    return UI::SetMenuSectionFlags(path ? path : "", flags, mask);
+}
+
+bool GetSectionFlags(const char* path, uint32_t* out) {
+    return UI::GetMenuSectionFlags(path ? path : "", out);
+}
+
 WindowInterface* AddWindow(RenderFunction rendererFunction) { 
 
     auto newWindow = new Window();

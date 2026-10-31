@@ -8,10 +8,18 @@
 
 #define FUNCTION_PREFIX extern "C" [[maybe_unused]] __declspec(dllexport)
 
+enum SectionFlags : uint32_t {
+    SectionFlags_None = 0,
+    SectionFlags_Hidden = 1 << 0,
+    SectionFlags_Disabled = 1 << 1
+};
+
 // Menu paths use unescaped '/' characters as separators. Prefix a literal slash with a backslash.
 FUNCTION_PREFIX void AddSectionItem(const char* path, RenderFunction rendererFunction);
 FUNCTION_PREFIX bool RenameSection(const char* path, const char* newName);
 FUNCTION_PREFIX bool DeleteSection(const char* path);
+FUNCTION_PREFIX bool SetSectionFlags(const char* path, uint32_t flags, uint32_t mask = ~0u);
+FUNCTION_PREFIX bool GetSectionFlags(const char* path, uint32_t* out);
 FUNCTION_PREFIX WindowInterface* AddWindow(RenderFunction rendererFunction);
 FUNCTION_PREFIX void PushBig();
 FUNCTION_PREFIX void PushDefault();

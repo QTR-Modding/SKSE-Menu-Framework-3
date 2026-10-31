@@ -64,7 +64,9 @@ namespace {
 
     std::recursive_mutex menuTreeMutex;
     std::deque<UI::MenuMutation> pendingMenuMutations;
-    std::set<MenuPath::Segments> projectedMenuPaths;
+    // Pending renames/deletes change API paths without changing the live tree during rendering.
+    std::map<MenuPath::Segments, UI::MenuTree*> projectedMenuNodes;
+    bool sectionFlagsChanged = false;
 
     std::string pendingArchiveMenuName;
     UI::MenuTree* pendingArchiveMenu = nullptr;
@@ -356,6 +358,41 @@ namespace {
         return false;
     }
 
+    bool IsMenuNodeAccessible(const UI::MenuTree* root, const UI::MenuTree* target) {
+        if (root->Flags & (SectionFlags_Hidden | SectionFlags_Disabled)) {
+            return false;
+        }
+        if (root == target) {
+            return true;
+        }
+        for (const auto& [name, child] : root->Children) {
+            if (IsMenuNodeAccessible(child, target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void RefreshSectionAccess() {
+        if (!sectionFlagsChanged) {
+            return;
+        }
+        sectionFlagsChanged = false;
+        if (display_node && !IsMenuNodeAccessible(UI::RootMenu, display_node)) {
+            display_node = nullptr;
+            UI::GamepadNavigation::NotifyPageClosed();
+        }
+        if (pendingArchiveMenu && !IsMenuNodeAccessible(UI::RootMenu, pendingArchiveMenu)) {
+            pendingArchiveMenuName.clear();
+            pendingArchiveMenu = nullptr;
+            archiveConfirmationRequested = false;
+        }
+        if (categoryEditor.Menu && !IsMenuNodeAccessible(UI::RootMenu, categoryEditor.Menu)) {
+            categoryEditor.Menu = nullptr;
+            categoryEditor.MenuName.clear();
+        }
+    }
+
     MenuPath::Segments GetRenamedPath(const MenuPath::Segments& path, const std::string& newName) {
         auto renamedPath = path;
         renamedPath.back() = newName;
@@ -367,43 +404,43 @@ namespace {
                std::equal(subtreePath.begin(), subtreePath.end(), path.begin());
     }
 
-    void CollectMenuPaths(const UI::MenuTree* node, MenuPath::Segments& parentPath,
-                          std::set<MenuPath::Segments>& paths) {
+    void CollectMenuNodes(const UI::MenuTree* node, MenuPath::Segments& parentPath,
+                          std::map<MenuPath::Segments, UI::MenuTree*>& nodes) {
         for (const auto& [name, child] : node->Children) {
             parentPath.push_back(name);
-            paths.insert(parentPath);
-            CollectMenuPaths(child, parentPath, paths);
+            nodes.emplace(parentPath, child);
+            CollectMenuNodes(child, parentPath, nodes);
             parentPath.pop_back();
         }
     }
 
-    void RebuildProjectedMenuPaths() {
-        projectedMenuPaths.clear();
+    void RebuildProjectedMenuNodes() {
+        projectedMenuNodes.clear();
         MenuPath::Segments rootPath;
-        CollectMenuPaths(UI::RootMenu, rootPath, projectedMenuPaths);
+        CollectMenuNodes(UI::RootMenu, rootPath, projectedMenuNodes);
     }
 
     void ProjectMenuMutation(const UI::MenuMutation& mutation) {
         if (mutation.Type == UI::MenuMutationType::Delete) {
-            std::erase_if(projectedMenuPaths, [&mutation](const MenuPath::Segments& path) {
-                return IsPathInSubtree(path, mutation.Path);
+            std::erase_if(projectedMenuNodes, [&mutation](const auto& entry) {
+                return IsPathInSubtree(entry.first, mutation.Path);
             });
             return;
         }
 
         const auto renamedPath = GetRenamedPath(mutation.Path, mutation.NewName);
-        std::set<MenuPath::Segments> renamedPaths;
-        for (const auto& path : projectedMenuPaths) {
+        std::map<MenuPath::Segments, UI::MenuTree*> renamedNodes;
+        for (const auto& [path, node] : projectedMenuNodes) {
             if (IsPathInSubtree(path, mutation.Path)) {
                 auto renamedDescendantPath = renamedPath;
                 renamedDescendantPath.insert(renamedDescendantPath.end(), path.begin() + mutation.Path.size(),
                                              path.end());
-                renamedPaths.insert(std::move(renamedDescendantPath));
+                renamedNodes.emplace(std::move(renamedDescendantPath), node);
             } else {
-                renamedPaths.insert(path);
+                renamedNodes.emplace(path, node);
             }
         }
-        projectedMenuPaths.swap(renamedPaths);
+        projectedMenuNodes.swap(renamedNodes);
     }
 
     bool FindMenuNode(const MenuPath::Segments& path, MenuNodeLocation& location) {
@@ -419,6 +456,15 @@ namespace {
             parent = child->second;
         }
         return location.Node != nullptr;
+    }
+
+    UI::MenuTree* FindRequestedMenuNode(const MenuPath::Segments& path) {
+        if (!pendingMenuMutations.empty()) {
+            const auto node = projectedMenuNodes.find(path);
+            return node != projectedMenuNodes.end() ? node->second : nullptr;
+        }
+        MenuNodeLocation location;
+        return FindMenuNode(path, location) ? location.Node : nullptr;
     }
 
     void ReplaceSortedChildName(UI::MenuTree* parent, UI::MenuTree* node, const std::string& newName) {
@@ -524,7 +570,7 @@ namespace {
                 logger::warn("Could not apply queued Mod Control Panel mutation for '{}'.", mutation.RequestedPath);
             }
         }
-        projectedMenuPaths.clear();
+        projectedMenuNodes.clear();
     }
 
     void AddToTreeInternal(UI::MenuTree* node, std::vector<std::string>& path, RenderFunction render,
@@ -608,6 +654,13 @@ namespace {
         return menus;
     }
 
+    bool IsRootMenuAvailable(const std::string& name) {
+        const auto menu = UI::RootMenu->Children.find(name);
+        return menu != UI::RootMenu->Children.end() &&
+            !(menu->second->Flags & (SectionFlags_Hidden | SectionFlags_Disabled)) &&
+            !RootMenuConfig::IsArchived(name);
+    }
+
     std::optional<std::string> GetDraggedRootMenuName() {
         const auto payload = ImGui::GetDragDropPayload();
         if (!payload || !payload->IsDataType(ROOT_MENU_PAYLOAD) || !payload->Data || payload->DataSize <= 1) {
@@ -618,7 +671,7 @@ namespace {
             return std::nullopt;
         }
         const std::string name(nameData, static_cast<std::size_t>(payload->DataSize - 1));
-        if (!UI::RootMenu->Children.contains(name) || RootMenuConfig::IsArchived(name)) {
+        if (!IsRootMenuAvailable(name)) {
             return std::nullopt;
         }
         return name;
@@ -637,7 +690,8 @@ namespace {
     std::optional<RootMenuDropPreview> RenderRootMenuDropTarget(const std::string& categoryName,
         const std::string& targetMenuName, std::optional<RootMenuDrop>& pendingDrop) {
         const auto draggedMenuName = GetDraggedRootMenuName();
-        if (!draggedMenuName || *draggedMenuName == targetMenuName) {
+        if (!draggedMenuName || *draggedMenuName == targetMenuName ||
+            (!targetMenuName.empty() && !IsRootMenuAvailable(targetMenuName))) {
             return std::nullopt;
         }
 
@@ -713,13 +767,12 @@ namespace {
     }
 
     bool ApplyRootMenuDrop(const RootMenuDrop& drop, const std::vector<const RootMenuEntry*>& rootMenus) {
-        if (!UI::RootMenu->Children.contains(drop.MenuName) || RootMenuConfig::IsArchived(drop.MenuName)) {
+        if (!IsRootMenuAvailable(drop.MenuName)) {
             logger::warn("Could not move unavailable root menu '{}'.", drop.MenuName);
             return false;
         }
         if (!drop.TargetMenuName.empty() &&
-            (!UI::RootMenu->Children.contains(drop.TargetMenuName) ||
-                RootMenuConfig::IsArchived(drop.TargetMenuName) ||
+            (!IsRootMenuAvailable(drop.TargetMenuName) ||
                 RootMenuConfig::GetCategory(drop.TargetMenuName) != drop.CategoryName)) {
             logger::warn("Could not move root menu '{}': the target menu is no longer available.", drop.MenuName);
             return false;
@@ -845,6 +898,9 @@ namespace {
     }
 
     void RenderCategoryChooser(const std::string& menuName, UI::MenuTree* menu) {
+        if (!IsRootMenuAvailable(menuName)) {
+            return;
+        }
         ImGui::SetNextWindowSizeConstraints(ImVec2{}, ImGui::GetMainViewport()->WorkSize * 0.85f);
         if (!ImGui::BeginPopup("CategoryChooser")) {
             return;
@@ -1046,13 +1102,13 @@ namespace {
         if (ImGui::BeginMenu(Translations::Get("Options.RestoreArchivedMenus"))) {
             bool hasArchivedMenus = false;
             for (const auto& [menuName, menu] : UI::RootMenu->Children) {
-                if (!RootMenuConfig::IsArchived(menuName)) {
+                if ((menu->Flags & SectionFlags_Hidden) || !RootMenuConfig::IsArchived(menuName)) {
                     continue;
                 }
 
                 hasArchivedMenus = true;
                 ImGui::PushID(menuName.c_str());
-                if (ImGui::MenuItem(menuName.c_str())) {
+                if (ImGui::MenuItem(menuName.c_str(), nullptr, false, !(menu->Flags & SectionFlags_Disabled))) {
                     SetRootMenuArchived(menuName, menu, false);
                 }
                 ImGui::PopID();
@@ -1109,7 +1165,12 @@ void DummyRenderer(std::pair<const std::string, UI::MenuTree*>& node) {
     }
 }
 
-void RenderNode(std::pair<const std::string, UI::MenuTree*>& node) {
+void RenderNode(std::pair<const std::string, UI::MenuTree*>& node, bool parentDisabled = false) {
+    if (node.second->Flags & SectionFlags_Hidden) {
+        return;
+    }
+    const bool disabled = parentDisabled || (node.second->Flags & SectionFlags_Disabled);
+    ImGui::BeginDisabled(disabled);
     ImGuiTreeNodeFlags node_flags = base_flags;
     if (display_node == node.second) node_flags |= ImGuiTreeNodeFlags_Selected;
 
@@ -1125,7 +1186,7 @@ void RenderNode(std::pair<const std::string, UI::MenuTree*>& node) {
     const bool itemIsFocused = ImGui::IsItemFocused();
     const bool activatedByGamepad = gamepadButtonPressed && itemIsFocused;
 
-    if ((itemClicked || activatedByGamepad) && !itemToggledOpen) {
+    if (!disabled && (itemClicked || activatedByGamepad) && !itemToggledOpen) {
         if (node.second->Render) {
             display_node = node.second;
             if (activatedByGamepad) {
@@ -1135,7 +1196,7 @@ void RenderNode(std::pair<const std::string, UI::MenuTree*>& node) {
     }
     if (node_open && node.second->Children.size() != 0) {
         for (auto& item : node.second->SortedChildren) {
-            RenderNode(item);
+            RenderNode(item, disabled);
         }
         ImGui::TreePop();
     } else {
@@ -1143,6 +1204,7 @@ void RenderNode(std::pair<const std::string, UI::MenuTree*>& node) {
             DummyRenderer(item);
         }
     }
+    ImGui::EndDisabled();
 }
 
 bool UI::QueueMenuMutation(MenuMutationType type, std::string_view path, std::string_view newName) {
@@ -1164,21 +1226,57 @@ bool UI::QueueMenuMutation(MenuMutationType type, std::string_view path, std::st
     std::lock_guard<std::recursive_mutex> lock(menuTreeMutex);
 
     if (pendingMenuMutations.empty()) {
-        RebuildProjectedMenuPaths();
+        RebuildProjectedMenuNodes();
     }
-    if (!projectedMenuPaths.contains(mutation.Path)) {
+    if (!projectedMenuNodes.contains(mutation.Path)) {
         return false;
     }
 
     if (mutation.Type == MenuMutationType::Rename) {
         const auto renamedPath = GetRenamedPath(mutation.Path, mutation.NewName);
-        if (renamedPath != mutation.Path && projectedMenuPaths.contains(renamedPath)) {
+        if (renamedPath != mutation.Path && projectedMenuNodes.contains(renamedPath)) {
             return false;
         }
     }
 
     pendingMenuMutations.push_back(std::move(mutation));
     ProjectMenuMutation(pendingMenuMutations.back());
+    return true;
+}
+
+bool UI::SetMenuSectionFlags(std::string_view path, uint32_t flags, uint32_t mask) {
+    const auto parsedPath = MenuPath::Parse(path);
+    if (!parsedPath) {
+        return false;
+    }
+    std::lock_guard<std::recursive_mutex> lock(menuTreeMutex);
+    const auto node = FindRequestedMenuNode(*parsedPath);
+    if (!node) {
+        return false;
+    }
+    const auto updatedFlags = (node->Flags & ~mask) | (flags & mask);
+    if (node->Flags != updatedFlags) {
+        node->Flags = updatedFlags;
+        // UI state is refreshed only on the render thread, including after a mod's callback.
+        sectionFlagsChanged = true;
+    }
+    return true;
+}
+
+bool UI::GetMenuSectionFlags(std::string_view path, uint32_t* out) {
+    if (!out) {
+        return false;
+    }
+    const auto parsedPath = MenuPath::Parse(path);
+    if (!parsedPath) {
+        return false;
+    }
+    std::lock_guard<std::recursive_mutex> lock(menuTreeMutex);
+    const auto node = FindRequestedMenuNode(*parsedPath);
+    if (!node) {
+        return false;
+    }
+    *out = node->Flags;
     return true;
 }
 
@@ -1224,6 +1322,7 @@ void UI::SaveWindowSettings() {
 void __stdcall UI::RenderMenuWindow() {
     ApplyPendingMenuMutations();
     std::lock_guard<std::recursive_mutex> lock(menuTreeMutex);
+    RefreshSectionAccess();
 
     auto viewport = ImGui::GetMainViewport();
     ApplyWindowSizeAndPosition(mainWindowSizeAndPosition, viewport->GetCenter(), ImVec2{viewport->Size.x * 0.8f, viewport->Size.y * 0.8f},
@@ -1355,6 +1454,9 @@ void __stdcall UI::RenderMenuWindow() {
     }
     for (const auto rootMenu : rootMenus) {
         const auto& item = *rootMenu;
+        if (item.second->Flags & SectionFlags_Hidden) {
+            continue;
+        }
         if (RootMenuConfig::IsArchived(item.first)) {
             for (auto node : item.second->Children) {
                 DummyRenderer(node);
@@ -1396,6 +1498,8 @@ void __stdcall UI::RenderMenuWindow() {
         }
         for (const auto rootMenu : menus) {
             const auto& item = *rootMenu;
+            const bool disabled = (item.second->Flags & SectionFlags_Disabled) != 0;
+            ImGui::BeginDisabled(disabled);
             const bool headerOpen = ImGui::TreeNodeEx(item.second,
                 ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_AllowOverlap, "");
             const auto headerMin = ImGui::GetItemRectMin();
@@ -1407,12 +1511,14 @@ void __stdcall UI::RenderMenuWindow() {
             if (textMax.x > textMin.x) {
                 ImGui::RenderTextClipped(textMin, textMax, item.first.c_str(), item.first.c_str() + item.first.size(), nullptr);
             }
-            RenderRootMenuDragSource(item.first);
+            if (!disabled) {
+                RenderRootMenuDragSource(item.first);
+            }
             auto menuPreview = RenderRootMenuDropTarget(name, item.first, pendingDrop);
             RenderRootMenuButtons(item.first, item.second);
             if (!RootMenuConfig::IsArchived(item.first) && headerOpen) {
                 for (auto node : item.second->SortedChildren) {
-                    RenderNode(node);
+                    RenderNode(node, disabled);
                 }
             } else {
                 for (auto node : item.second->Children) {
@@ -1427,6 +1533,7 @@ void __stdcall UI::RenderMenuWindow() {
                 }
                 dropPreview = menuPreview;
             }
+            ImGui::EndDisabled();
         }
         if (showCategories) {
             ImGui::Unindent();
@@ -1472,6 +1579,7 @@ void __stdcall UI::RenderMenuWindow() {
     GamepadNavigation::EndArea();
     ImGui::EndChild();
 
+    RefreshSectionAccess();
     GamepadNavigation::RenderHintBar(display_node != nullptr);
 
     RenderArchiveConfirmation();

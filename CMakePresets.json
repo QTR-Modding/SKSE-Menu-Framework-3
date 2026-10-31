@@ -42,7 +42,8 @@
       "inherits": [ "base" ],
       "displayName": "RelWithDebInfo",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "/DEBUG /OPT:REF /INCREMENTAL:NO"
       }
     }
   ]

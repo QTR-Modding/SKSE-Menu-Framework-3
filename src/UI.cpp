@@ -99,6 +99,10 @@ namespace {
     WindowSizeAndPosition mainWindowSizeAndPosition{"MainWindow"};
     WindowSizeAndPosition configWindowSizeAndPosition{"SettingsWindow"};
 
+    constexpr float DEFAULT_MENU_SELECTOR_WIDTH_RATIO = 0.3f;
+    float menuSelectorWidthRatio = DEFAULT_MENU_SELECTOR_WIDTH_RATIO;
+    bool menuSelectorWidthRatioLoaded = false;
+
     struct PendingToggleChange {
         RE::INPUT_DEVICE Device = RE::INPUT_DEVICE::kNone;
         unsigned int Key = UI::KeyBindingCapture::UnboundKey;
@@ -272,6 +276,42 @@ namespace {
         sizeAndPosition.HasSavedState = true;
     }
 
+    float RenderMenuPanelSplitter(float splitterWidth, float height) {
+        if (!menuSelectorWidthRatioLoaded) {
+            Ini ini("SKSEMenuFramework.ini");
+            ini.SetSection(mainWindowSizeAndPosition.Section);
+            const float savedRatio = ini.GetFloat("SelectorWidthRatio", DEFAULT_MENU_SELECTOR_WIDTH_RATIO);
+            if (std::isfinite(savedRatio) && savedRatio > 0.0f && savedRatio < 1.0f) {
+                menuSelectorWidthRatio = savedRatio;
+            } else {
+                logger::warn("Invalid MainWindow SelectorWidthRatio in SKSEMenuFramework.ini; "
+                    "using the default split.");
+                menuSelectorWidthRatio = DEFAULT_MENU_SELECTOR_WIDTH_RATIO;
+            }
+            menuSelectorWidthRatioLoaded = true;
+        }
+
+        const float panelWidth = ImMax(ImGui::GetContentRegionAvail().x - splitterWidth, 8.0f);
+        const float minimumPanelWidth = ImMin(ImGui::GetFontSize() * 6.0f, panelWidth * 0.5f);
+        float selectorWidth = ImClamp(panelWidth * menuSelectorWidthRatio,
+            minimumPanelWidth, panelWidth - minimumPanelWidth);
+        float contentWidth = panelWidth - selectorWidth;
+        const float previousSelectorWidth = selectorWidth;
+        const auto position = ImGui::GetCursorScreenPos();
+        const ImRect bounds{ImVec2{position.x + selectorWidth, position.y},
+            ImVec2{position.x + selectorWidth + splitterWidth, position.y + ImMax(height, 1.0f)}};
+        ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::SplitterBehavior(bounds, ImGui::GetID("##MenuPanelSplitter"), ImGuiAxis_X,
+            &selectorWidth, &contentWidth, minimumPanelWidth, minimumPanelWidth);
+        ImGui::PopStyleColor();
+        if (selectorWidth != previousSelectorWidth) {
+            // Only dragging changes the preference; a temporary size clamp must not overwrite it.
+            menuSelectorWidthRatio = selectorWidth / panelWidth;
+            mainWindowSizeAndPosition.PendingSave = true;
+        }
+        return selectorWidth;
+    }
+
     ImVec2 GetCenteredWindowPosition(const ImGuiViewport* viewport, const ImVec2& size) {
         const auto center = viewport->GetCenter();
         return ImVec2{center.x - size.x * 0.5f, center.y - size.y * 0.5f};
@@ -285,6 +325,8 @@ namespace {
     }
 
     void ResetBuiltInWindowSizeAndPosition(const ImGuiViewport* viewport) {
+        menuSelectorWidthRatio = DEFAULT_MENU_SELECTOR_WIDTH_RATIO;
+        menuSelectorWidthRatioLoaded = true;
         const ImVec2 mainWindowSize{viewport->Size.x * 0.8f, viewport->Size.y * 0.8f};
         const ImVec2 mainWindowPosition = GetCenteredWindowPosition(viewport, mainWindowSize);
         SetWindowSizeAndPosition(mainWindowSizeAndPosition, mainWindowPosition, mainWindowSize);
@@ -1170,6 +1212,9 @@ void UI::SaveWindowSettings() {
         saved &= ini.SetFloat("Y", position.y);
         saved &= ini.SetFloat("Width", size.x);
         saved &= ini.SetFloat("Height", size.y);
+        if (state == &mainWindowSizeAndPosition) {
+            saved &= ini.SetFloat("SelectorWidthRatio", menuSelectorWidthRatio);
+        }
     }
     if (!saved || !ini.Save()) {
         logger::warn("Failed to save window layouts to SKSEMenuFramework.ini");
@@ -1260,14 +1305,18 @@ void __stdcall UI::RenderMenuWindow() {
     float headerHeight = 41.0f;
     float headerOffsetY = 5.0f;
 
-
+    const float hintBarHeight = GamepadNavigation::GetHintBarHeight();
+    const float hintBarSpace = hintBarHeight > 0.0f ? hintBarHeight + ImGui::GetStyle().ItemSpacing.y : 0.0f;
+    const float contentHeight = hintBarHeight > 0.0f ? -hintBarSpace : -FLT_MIN;
+    const float splitterWidth = ImMax(ImGui::GetStyle().ItemSpacing.x, 6.0f);
+    const float selectorWidth = RenderMenuPanelSplitter(splitterWidth, ImGui::GetContentRegionAvail().y - hintBarSpace);
 
     // Filter section
-    ImGui::BeginChild("TreeView2", ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, filterHeight), ImGuiChildFlags_None);
+    ImGui::BeginChild("TreeView2", ImVec2(selectorWidth, filterHeight), ImGuiChildFlags_None);
     filter.Draw("##SKSEModControlPanelMenuFilter", -FLT_MIN);
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    ImGui::SameLine(0.0f, splitterWidth);
 
     // Header section
     ImGui::BeginChild("SKSEModControlPanelModMenuHeader", ImVec2(0, headerHeight), ImGuiChildFlags_None);
@@ -1282,11 +1331,8 @@ void __stdcall UI::RenderMenuWindow() {
     ImGui::EndChild();
 
     // Tree view section
-    const float hintBarHeight = GamepadNavigation::GetHintBarHeight();
-    const float contentHeight =
-        hintBarHeight > 0.0f ? -(hintBarHeight + ImGui::GetStyle().ItemSpacing.y) : -FLT_MIN;
     ImGui::BeginChild("SKSEModControlPanelTreeView",
-                      ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, contentHeight),
+                      ImVec2(selectorWidth, contentHeight),
                       ImGuiChildFlags_Border);
     GamepadNavigation::BeginArea(GamepadNavigation::Area::PageTree);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 5.0f));
@@ -1415,7 +1461,7 @@ void __stdcall UI::RenderMenuWindow() {
     GamepadNavigation::EndArea();
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    ImGui::SameLine(0.0f, splitterWidth);
 
     // Content section
     ImGui::BeginChild("SKSEModControlPanelMenuNode", ImVec2(0, contentHeight), ImGuiChildFlags_Border);

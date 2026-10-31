@@ -38,9 +38,11 @@ void WindowManager::Close() {
     UI::keyBindingCapture.Reset();
     WindowManager::MainInterface->BlockUserInput = true;
     WindowManager::ConfigInterface->BlockUserInput = true;
-    ConfigInterface->IsOpen = false;
-    MainInterface->IsOpen = false;
-    Event::DispatchEvent(Event::EventType::kCloseMenu);
+    const bool configWasOpen = ConfigInterface->IsOpen.exchange(false);
+    const bool mainWasOpen = MainInterface->IsOpen.exchange(false);
+    if (mainWasOpen || configWasOpen) {
+        Event::DispatchEvent(Event::EventType::kCloseMenu);
+    }
 }
 
 void WindowManager::Open() {

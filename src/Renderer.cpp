@@ -90,10 +90,11 @@ bool UI::Renderer::ProcessOpenClose(RE::InputEvent* const* evns) {
             }
         }
 
-        if (a_event->GetIDCode() == REX::W32::DIK_ESCAPE && temp_device == RE::INPUT_DEVICE::kKeyboard) {
-            bool hasChanged = WindowManager::MainInterface->IsOpen.load();
+        if (temp_device == RE::INPUT_DEVICE::kKeyboard && a_event->GetIDCode() == REX::W32::DIK_ESCAPE &&
+            a_event->IsDown() &&
+            (WindowManager::MainInterface->IsOpen.load() || WindowManager::ConfigInterface->IsOpen.load())) {
             WindowManager::Close();
-            return hasChanged;
+            return true;
         }
     }
     return false;

@@ -1176,6 +1176,9 @@ void RenderNode(std::pair<const std::string, UI::MenuTree*>& node, bool parentDi
 
     if (node.second->Children.size() == 0) {
         node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    } else if (disabled) {
+        node_flags |= ImGuiTreeNodeFlags_NoAutoOpenOnLog;
+        ImGui::SetNextItemOpen(false, ImGuiCond_Always);
     }
     bool node_open = ImGui::TreeNodeEx(node.second, node_flags, "%s", node.first.c_str());
 
@@ -1500,6 +1503,9 @@ void __stdcall UI::RenderMenuWindow() {
             const auto& item = *rootMenu;
             const bool disabled = (item.second->Flags & SectionFlags_Disabled) != 0;
             ImGui::BeginDisabled(disabled);
+            if (disabled && !item.second->Children.empty()) {
+                ImGui::SetNextItemOpen(false, ImGuiCond_Always);
+            }
             const bool headerOpen = ImGui::TreeNodeEx(item.second,
                 ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_AllowOverlap, "");
             const auto headerMin = ImGui::GetItemRectMin();

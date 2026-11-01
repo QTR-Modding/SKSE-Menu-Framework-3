@@ -1749,6 +1749,7 @@ void UI::RenderConfigWindow() {
                                                   "Settings.GlyphLanguage.Japanese", "Settings.GlyphLanguage.Korean",
                                                   "Settings.GlyphLanguage.Cyrillic", "Settings.GlyphLanguage.Thai",
                                                   "Settings.GlyphLanguage.Turkish",  "Settings.GlyphLanguage.Polish",
+                                                  "Settings.GlyphLanguage.Vietnamese",
                                                   "Settings.GlyphLanguage.Custom"};
         const auto selectedGlyphLanguage = Config::GetGlyphLanguage();
         const auto selectedGlyphLanguageIndex = static_cast<std::size_t>(selectedGlyphLanguage);
@@ -1793,6 +1794,7 @@ void UI::RenderConfigWindow() {
             ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Thai"), &pendingGlyphRanges.Thai);
             ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Turkish"), &pendingGlyphRanges.Turkish);
             ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Polish"), &pendingGlyphRanges.Polish);
+            ImGui::Checkbox(Translations::Get("Settings.GlyphLanguage.Vietnamese"), &pendingGlyphRanges.Vietnamese);
             ImGui::Separator();
             const bool cancel = ImGui::Button(Translations::Get("Settings.GlyphLanguage.Cancel")) ||
                 ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false);

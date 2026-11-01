@@ -2,7 +2,18 @@
 
 class Config {
 public:
-    enum class GlyphLanguage : uint8_t { Default, Chinese, Japanese, Korean, Cyrillic, Thai, Turkish, Polish, Custom };
+    enum class GlyphLanguage : uint8_t {
+        Default,
+        Chinese,
+        Japanese,
+        Korean,
+        Cyrillic,
+        Thai,
+        Turkish,
+        Polish,
+        Vietnamese,
+        Custom
+    };
 
     struct GlyphRangeSelection {
         bool Chinese = false;
@@ -12,6 +23,7 @@ public:
         bool Thai = false;
         bool Turkish = false;
         bool Polish = false;
+        bool Vietnamese = false;
 
         bool operator==(const GlyphRangeSelection&) const = default;
     };
@@ -39,6 +51,7 @@ public:
     static bool EnableThai;
     static bool EnableTurkish;
     static bool EnablePolish;
+    static bool EnableVietnamese;
     static float FontSizeMedium;
     static GlyphLanguage GetGlyphLanguage();
     static void SetGlyphLanguage(GlyphLanguage language);

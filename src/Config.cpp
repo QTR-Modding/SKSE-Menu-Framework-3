@@ -26,6 +26,7 @@ bool Config::EnableCyrillic = false;
 bool Config::EnableThai = false;
 bool Config::EnableTurkish = false;
 bool Config::EnablePolish = false;
+bool Config::EnableVietnamese = false;
 float Config::FontSizeMedium = 32.0f;
 float Config::MinFontSize = 12.0f;
 float Config::MaxFontSize = 64.0f;
@@ -60,6 +61,7 @@ void Config::Init() {
     EnableThai = ini->GetBool("EnableThai", false);
     EnableTurkish = ini->GetBool("EnableTurkish", false);
     EnablePolish = ini->GetBool("EnablePolish", false);
+    EnableVietnamese = ini->GetBool("EnableVietnamese", false);
     MinFontSize = ini->GetFloat("MinFontSize", 12.0f);
     MaxFontSize = ini->GetFloat("MaxFontSize", 64.0f);
     if (!std::isfinite(MinFontSize)) {
@@ -133,6 +135,7 @@ void Config::Save() {
     ini->SetBool("EnableThai", EnableThai);
     ini->SetBool("EnableTurkish", EnableTurkish);
     ini->SetBool("EnablePolish", EnablePolish);
+    ini->SetBool("EnableVietnamese", EnableVietnamese);
 
     ini->SetFloat("MinFontSize", MinFontSize);
     ini->SetFloat("MaxFontSize", MaxFontSize);
@@ -151,7 +154,7 @@ void Config::LoadStyle() { Theme::LoadJsonStyle(MenuStyles[MenuStyle]); }
 
 Config::GlyphLanguage Config::GetGlyphLanguage() {
     const std::array enabledRanges = {EnableChinese, EnableJapanese, EnableKorean, EnableCyrillic,
-                                      EnableThai, EnableTurkish, EnablePolish};
+                                      EnableThai, EnableTurkish, EnablePolish, EnableVietnamese};
     if (std::count(enabledRanges.begin(), enabledRanges.end(), true) > 1) return GlyphLanguage::Custom;
 
     if (EnableChinese) return GlyphLanguage::Chinese;
@@ -161,6 +164,7 @@ Config::GlyphLanguage Config::GetGlyphLanguage() {
     if (EnableThai) return GlyphLanguage::Thai;
     if (EnableTurkish) return GlyphLanguage::Turkish;
     if (EnablePolish) return GlyphLanguage::Polish;
+    if (EnableVietnamese) return GlyphLanguage::Vietnamese;
     return GlyphLanguage::Default;
 }
 
@@ -172,11 +176,12 @@ void Config::SetGlyphLanguage(GlyphLanguage language) {
     SetGlyphRangeSelection({language == GlyphLanguage::Chinese, language == GlyphLanguage::Japanese,
                             language == GlyphLanguage::Korean, language == GlyphLanguage::Cyrillic,
                             language == GlyphLanguage::Thai, language == GlyphLanguage::Turkish,
-                            language == GlyphLanguage::Polish});
+                            language == GlyphLanguage::Polish, language == GlyphLanguage::Vietnamese});
 }
 
 Config::GlyphRangeSelection Config::GetGlyphRangeSelection() {
-    return {EnableChinese, EnableJapanese, EnableKorean, EnableCyrillic, EnableThai, EnableTurkish, EnablePolish};
+    return {EnableChinese, EnableJapanese, EnableKorean, EnableCyrillic, EnableThai, EnableTurkish, EnablePolish,
+            EnableVietnamese};
 }
 
 void Config::SetGlyphRangeSelection(const GlyphRangeSelection& selection) {
@@ -187,6 +192,7 @@ void Config::SetGlyphRangeSelection(const GlyphRangeSelection& selection) {
     EnableThai = selection.Thai;
     EnableTurkish = selection.Turkish;
     EnablePolish = selection.Polish;
+    EnableVietnamese = selection.Vietnamese;
 }
 
 float Config::NormalizeFontSize(float size) {

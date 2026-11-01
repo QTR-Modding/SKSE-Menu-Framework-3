@@ -195,6 +195,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         if (Config::EnableThai) builder.AddRanges(io.Fonts->GetGlyphRangesThai());
         if (Config::EnableTurkish) builder.AddRanges(TURKISH_GLYPH_RANGES);
         if (Config::EnablePolish) builder.AddRanges(POLISH_GLYPH_RANGES);
+        if (Config::EnableVietnamese) builder.AddRanges(io.Fonts->GetGlyphRangesVietnamese());
 
         builder.BuildRanges(&persistentGlyphRanges[size]);
 

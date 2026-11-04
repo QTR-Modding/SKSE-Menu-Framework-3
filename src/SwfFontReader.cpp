@@ -800,7 +800,9 @@ namespace SwfFontReader {
             return result;
         }
 
-        std::vector<std::uint8_t> BuildTrueType(ParsedFont font) {
+        // lineExtent receives ascent - descent as written to the hhea table (0 when no face is built).
+        std::vector<std::uint8_t> BuildTrueType(ParsedFont font, std::int32_t& lineExtent) {
+            lineExtent = 0;
             std::ranges::sort(font.glyphs, {}, &Glyph::code);
             const auto duplicate = std::ranges::unique(font.glyphs, {}, &Glyph::code);
             font.glyphs.erase(duplicate.begin(), duplicate.end());
@@ -883,6 +885,7 @@ namespace SwfFontReader {
             const auto numberOfGlyphs = static_cast<std::uint16_t>(font.glyphs.size() + 1);
             const auto ascent = font.ascent != 0 ? font.ascent : globalYMax;
             const auto descent = font.descent != 0 ? font.descent : globalYMin;
+            lineExtent = static_cast<std::int32_t>(ascent) - descent;
 
             std::vector<std::uint8_t> head;
             WriteU32(head, 0x00010000);
@@ -1091,7 +1094,7 @@ namespace SwfFontReader {
                 font.name = regular->fullName;
                 font.sourceName = resourceName;
                 font.aliases = {regular->tagName};
-                font.trueTypeData = BuildTrueType(std::move(*regular));
+                font.trueTypeData = BuildTrueType(std::move(*regular), font.lineExtent);
                 font.isVanillaFallback = ToLower(resourceName) == "fonts_en.swf";
                 if (font.trueTypeData.empty()) {
                     throw ParseError("regular Futura face contains no usable glyphs");
@@ -1103,7 +1106,8 @@ namespace SwfFontReader {
                 if (supplemental != parsedFonts.end()) {
                     font.supplementalName = supplemental->tagName;
                     font.supplementalLanguage = supplemental->supplementalLanguage;
-                    font.supplementalTrueTypeData = BuildTrueType(std::move(*supplemental));
+                    font.supplementalTrueTypeData =
+                        BuildTrueType(std::move(*supplemental), font.supplementalLineExtent);
                     if (font.supplementalTrueTypeData.empty()) {
                         logger::warn("SWF font reader: Supplemental face '{}' in '{}' contains no usable glyphs.",
                                      font.supplementalName, resourceName);
@@ -1145,7 +1149,7 @@ namespace SwfFontReader {
                     font.italic = parsed.italic;
                     font.isVanillaFallback = ToLower(library) == "fonts_en.swf" &&
                                              IsRegularFuturaCondensed(parsed.tagName, parsed.bold, parsed.italic);
-                    font.trueTypeData = BuildTrueType(std::move(parsed));
+                    font.trueTypeData = BuildTrueType(std::move(parsed), font.lineExtent);
                     if (font.trueTypeData.empty()) throw ParseError("configured face contains no usable glyphs");
                     entry->second = std::move(font);
                 }
@@ -1234,6 +1238,7 @@ namespace SwfFontReader {
                     if (base != &*mapped) {
                         font.supplementalName = faceName;
                         font.supplementalTrueTypeData = mapped->trueTypeData;
+                        font.supplementalLineExtent = mapped->lineExtent;
                         font.supplementalLanguage = language == "CN" ? SupplementalGlyphLanguage::Chinese
                                                     : language == "JA" ? SupplementalGlyphLanguage::Japanese
                                                                        : SupplementalGlyphLanguage::Configured;

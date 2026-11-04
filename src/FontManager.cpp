@@ -135,6 +135,34 @@ namespace {
         }
     }
 
+    // ImGui sizes a face so that its line extent (ascent - descent) equals the requested size. The base Futura
+    // face and a supplemental Japanese face have different line extents, so the same size draws them at
+    // different em sizes. Scaling the supplemental face by the ratio of the extents gives both faces the same
+    // em size, as in the game's own UI. Returns 1.0 when no adjustment applies.
+    float GetSupplementalSizeScale(const SwfFontReader::FontData& fontData) {
+        constexpr float MIN_SCALE = 0.5f;
+        constexpr float MAX_SCALE = 2.0f;
+
+        if (fontData.supplementalLanguage != SwfFontReader::SupplementalGlyphLanguage::Japanese) {
+            return 1.0f;
+        }
+        if (fontData.lineExtent <= 0 || fontData.supplementalLineExtent <= 0) {
+            SKSE::log::warn("FontLoader: Missing line extent for '{}' (base {}, supplemental {}); not scaling '{}'.",
+                            fontData.name, fontData.lineExtent, fontData.supplementalLineExtent,
+                            fontData.supplementalName);
+            return 1.0f;
+        }
+
+        const auto scale =
+            static_cast<float>(fontData.supplementalLineExtent) / static_cast<float>(fontData.lineExtent);
+        if (scale < MIN_SCALE || scale > MAX_SCALE) {
+            SKSE::log::warn("FontLoader: Supplemental scale {} for '{}' is out of range; not scaling '{}'.", scale,
+                            fontData.name, fontData.supplementalName);
+            return 1.0f;
+        }
+        return scale;
+    }
+
     ImFont* AddEmbeddedCompositeFont(ImGuiIO& io, const SwfFontReader::FontData& fontData, float size,
                                      const ImFontConfig* fontConfig, const ImWchar* glyphRanges) {
         const auto font = AddEmbeddedFont(io, fontData, size, fontConfig, glyphRanges);
@@ -146,8 +174,9 @@ namespace {
         ImFontConfig mergeConfig = fontConfig ? *fontConfig : ImFontConfig();
         mergeConfig.MergeMode = true;
         mergeConfig.PixelSnapH = true;
-        const auto mergedFont = AddEmbeddedFontData(io, fontData.supplementalTrueTypeData, fontData.supplementalName,
-                                                    size, &mergeConfig, glyphRanges);
+        const auto mergedFont =
+            AddEmbeddedFontData(io, fontData.supplementalTrueTypeData, fontData.supplementalName,
+                                size * GetSupplementalSizeScale(fontData), &mergeConfig, glyphRanges);
         if (!mergedFont) {
             SKSE::log::warn("FontLoader: Could not merge localized face '{}' into '{}'.", fontData.supplementalName,
                             fontData.name);

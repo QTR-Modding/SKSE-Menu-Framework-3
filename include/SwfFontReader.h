@@ -15,6 +15,9 @@ namespace SwfFontReader {
         std::string supplementalName;
         std::vector<std::uint8_t> supplementalTrueTypeData;
         SupplementalGlyphLanguage supplementalLanguage = SupplementalGlyphLanguage::None;
+        // ascent - descent of the converted faces, in TrueType units. ImGui sizes a face by this extent.
+        std::int32_t lineExtent = 0;
+        std::int32_t supplementalLineExtent = 0;
         bool isVanillaFallback = false;
         bool bold = false;
         bool italic = false;

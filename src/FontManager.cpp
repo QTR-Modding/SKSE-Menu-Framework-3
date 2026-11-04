@@ -37,7 +37,19 @@ namespace {
         0,
     };
 
+    // Added on top of ImGui's Japanese table (about 2,900 ideographs) so that every CJK ideograph the font
+    // provides can be shown, plus the General Punctuation block (ellipsis, dashes, ...).
+    constexpr ImWchar JAPANESE_EXTRA_GLYPH_RANGES[] = {
+        0x2000, 0x206F,  // General Punctuation
+        0x4E00, 0x9FFF,  // CJK Unified Ideographs
+        0,
+    };
+
     constexpr auto FONT_DIRECTORY = "Data/SKSE/Plugins/Fonts";
+
+    // The full CJK ideograph range needs a wide, non power-of-two atlas without oversampling to stay within
+    // the maximum texture size.
+    bool UsesWideCjkAtlas() { return Config::EnableChinese || Config::EnableJapanese; }
 
     std::string NormalizeFontName(std::string name) {
         std::ranges::transform(name, name.begin(),
@@ -189,7 +201,10 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
         builder.AddRanges(io.Fonts->GetGlyphRangesDefault());  // Basic English
 
         if (Config::EnableChinese) builder.AddRanges(io.Fonts->GetGlyphRangesChineseFull());
-        if (Config::EnableJapanese) builder.AddRanges(io.Fonts->GetGlyphRangesJapanese());
+        if (Config::EnableJapanese) {
+            builder.AddRanges(io.Fonts->GetGlyphRangesJapanese());
+            builder.AddRanges(JAPANESE_EXTRA_GLYPH_RANGES);
+        }
         if (Config::EnableKorean) builder.AddRanges(io.Fonts->GetGlyphRangesKorean());
         if (Config::EnableCyrillic) builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
         if (Config::EnableThai) builder.AddRanges(io.Fonts->GetGlyphRangesThai());
@@ -211,7 +226,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
     ImFontConfig font_config;
     font_config.PixelSnapH = true;
 
-    if (Config::EnableChinese) {
+    if (UsesWideCjkAtlas()) {
         font_config.OversampleH = 1;
         font_config.OversampleV = 1;
         io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
@@ -288,7 +303,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
     ImFontConfig merge_config;
     merge_config.MergeMode = true;
     merge_config.PixelSnapH = true;
-    if (Config::EnableChinese) {
+    if (UsesWideCjkAtlas()) {
         merge_config.OversampleH = 1;
         merge_config.OversampleV = 1;
     }
@@ -348,7 +363,7 @@ FontContainer FontManager::LoadFonts(ImGuiIO& io, float size) {
                 ImFontConfig namedMergeConfig;
                 namedMergeConfig.MergeMode = true;
                 namedMergeConfig.PixelSnapH = true;
-                if (Config::EnableChinese) {
+                if (UsesWideCjkAtlas()) {
                     namedMergeConfig.OversampleH = 1;
                     namedMergeConfig.OversampleV = 1;
                 }

@@ -322,21 +322,23 @@ void Render() {
             io.MouseDrawCursor = true;
         }
 
-        static bool _lastWantTextInput = ImGui::GetIO().WantTextInput; 
-        const bool wantTextInput = ImGui::GetIO().WantTextInput;
-        if (_lastWantTextInput != wantTextInput) {
-            _lastWantTextInput = wantTextInput;
-            if (const auto controlMap = RE::ControlMap::GetSingleton()) {
-                controlMap->AllowTextInput(wantTextInput);
-            }
-        }
-
         UI::Renderer::RenderWindows();
     } else {
         auto& io = ImGui::GetIO();
         io.MouseDrawCursor = false;
         GameLock::SetState(GameLock::State::Unlocked);
     }
+
+    static bool textInputEnabled = false;
+
+    const bool wantTextInput = WindowManager::IsAnyWindowOpen() && ImGui::GetIO().WantTextInput;
+    if (textInputEnabled != wantTextInput) {
+        if (const auto controlMap = RE::ControlMap::GetSingleton()) {
+            controlMap->AllowTextInput(wantTextInput);
+            textInputEnabled = wantTextInput;
+        }
+    }
+
     UI::SaveWindowSettings();
     FontManager::CleanFont();
     ImGui::EndFrame();
